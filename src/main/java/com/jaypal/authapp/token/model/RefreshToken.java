@@ -3,6 +3,7 @@ package com.jaypal.authapp.token.model;
 import com.jaypal.authapp.user.model.User;
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -22,34 +23,32 @@ import java.util.UUID;
 public class RefreshToken {
 
     @Id
-    @GeneratedValue(generator = "UUID")
+    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "jti", nullable = false, unique = true, updatable = false)
+    @Column(nullable = false, unique = true, updatable = false)
     private String jti;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false, updatable = false)
     private User user;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
-    @Column(name = "expires_at", nullable = false)
+    @Column(nullable = false)
     private Instant expiresAt;
 
     @Column(nullable = false)
-    private boolean revoked = false;
+    private boolean revoked;
 
     @Column(name = "replaced_by_token")
     private String replacedByToken;
 
     @PrePersist
-    protected void onCreate() {
-        if (this.createdAt == null) {
-            this.createdAt = Instant.now();
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = Instant.now();
         }
     }
-
-
 }

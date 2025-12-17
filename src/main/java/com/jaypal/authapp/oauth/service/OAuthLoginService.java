@@ -1,4 +1,68 @@
 package com.jaypal.authapp.oauth.service;
 
+import com.jaypal.authapp.oauth.mapper.OAuthUserInfoMapperFactory;
+import com.jaypal.authapp.oauth.model.ValidatedOAuthUserInfo;
+import com.jaypal.authapp.security.jwt.JwtService;
+import com.jaypal.authapp.token.model.RefreshToken;
+import com.jaypal.authapp.token.service.RefreshTokenService;
+import com.jaypal.authapp.user.model.Provider;
+import com.jaypal.authapp.user.model.User;
+import com.jaypal.authapp.user.repository.UserRepository;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
 public class OAuthLoginService {
+
+    private final UserRepository userRepository;
+    private final RefreshTokenService refreshTokenService;
+    private final JwtService jwtService;
+
+    @Transactional
+    public OAuthLoginResult login(OAuth2AuthenticationToken authentication) {
+
+        Provider provider =
+                Provider.valueOf(
+                        authentication
+                                .getAuthorizedClientRegistrationId()
+                                .toUpperCase()
+                );
+
+        ValidatedOAuthUserInfo info =
+                OAuthUserInfoMapperFactory
+                        .get(provider)
+                        .map(authentication.getPrincipal().getAttributes());
+
+        User user = userRepository
+                .findByProviderAndProviderId(provider, info.providerId())
+                .orElseGet(() ->
+                        userRepository.save(
+                                User.createOAuth(
+                                        provider,
+                                        info.providerId(),
+                                        info.email(),
+                                        info.name(),
+                                        info.image()
+                                )
+                        )
+                );
+
+        RefreshToken refreshToken =
+                refreshTokenService.issue(
+                        user,
+                        jwtService.getRefreshTtlSeconds()
+                );
+
+        return new OAuthLoginResult(
+                jwtService.generateAccessToken(user),
+                jwtService.generateRefreshToken(
+                        user,
+                        refreshToken.getJti()
+                ),
+                jwtService.getRefreshTtlSeconds()
+        );
+    }
 }

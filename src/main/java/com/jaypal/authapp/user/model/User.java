@@ -2,13 +2,10 @@ package com.jaypal.authapp.user.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
-
 import java.time.Instant;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
 @Entity
 @Table(
@@ -19,18 +16,18 @@ import java.util.stream.Collectors;
         }
 )
 @Getter
-@Setter
+@Setter(AccessLevel.PRIVATE)
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class User implements UserDetails {
+public class User {
 
     @Id
     @Column(name = "user_id", nullable = false, updatable = false)
     private UUID id;
 
     @Column(unique = true)
-    private String email; // nullable for OAuth
+    private String email;
 
     private String password;
 
@@ -64,34 +61,68 @@ public class User implements UserDetails {
     @Builder.Default
     private Set<Role> roles = new HashSet<>();
 
-    @PrePersist
-    void onCreate() {
+    // ---------------- FACTORIES ----------------
+
+    public static User createLocal(
+            String email,
+            String password,
+            String name
+    ) {
+        UUID id = UUID.randomUUID();
         Instant now = Instant.now();
-        if (id == null) id = UUID.randomUUID();
-        createdAt = now;
-        updatedAt = now;
-        enabled = true;
+
+        return User.builder()
+                .id(id)
+                .email(email)
+                .password(password)
+                .name(name)
+//                .image(image)
+                .enabled(true)
+                .provider(Provider.LOCAL)
+                .providerId(id.toString())
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
     }
 
-    @PreUpdate
-    void onUpdate() {
-        updatedAt = Instant.now();
+    public static User createOAuth(
+            Provider provider,
+            String providerId,
+            String email,
+            String name,
+            String image
+    ) {
+        UUID id = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        return User.builder()
+                .id(id)
+                .email(email)
+                .name(name)
+                .image(image)
+                .enabled(true)
+                .provider(provider)
+                .providerId(providerId)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
     }
 
-    @Override
-    public Collection<? extends GrantedAuthority> getAuthorities() {
-        if (roles == null || roles.isEmpty()) return Collections.emptySet();
-        return roles.stream()
-                .map(Role::getName)
-                .filter(Objects::nonNull)
-                .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r)
-                .map(SimpleGrantedAuthority::new)
-                .collect(Collectors.toSet());
+    // ---------------- DOMAIN INTENT ----------------
+
+    public void updateProfile(String name, String image) {
+        if (name != null) this.name = name;
+        if (image != null) this.image = image;
+        this.updatedAt = Instant.now();
     }
 
-    @Override public String getUsername() { return email; }
-    @Override public boolean isAccountNonExpired() { return true; }
-    @Override public boolean isAccountNonLocked() { return true; }
-    @Override public boolean isCredentialsNonExpired() { return true; }
-    @Override public boolean isEnabled() { return enabled; }
+    public void changePassword(String encodedPassword) {
+        this.password = encodedPassword;
+        this.updatedAt = Instant.now();
+    }
+
+    public void disable() {
+        this.enabled = false;
+        this.updatedAt = Instant.now();
+    }
 }

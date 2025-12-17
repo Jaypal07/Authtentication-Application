@@ -1,18 +1,13 @@
 package com.jaypal.authapp.security.filter;
 
-import com.jaypal.authapp.common.util.UserHelper;
-import com.jaypal.authapp.user.repository.UserRepository;
 import com.jaypal.authapp.security.jwt.JwtService;
-import io.jsonwebtoken.*;
+import com.jaypal.authapp.security.principal.AuthPrincipal;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -20,8 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Component
@@ -29,77 +22,55 @@ import java.util.stream.Collectors;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final UserRepository userRepository;
-    private final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
             HttpServletResponse response,
-            FilterChain filterChain
+            FilterChain chain
     ) throws ServletException, IOException {
 
-        String authorizationHeader = request.getHeader("Authorization");
-        logger.info("Authorization header: {}", authorizationHeader);
+        String header = request.getHeader("Authorization");
 
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
+        if (header != null && header.startsWith("Bearer ")) {
 
-            String token = authorizationHeader.substring(7);
+            String token = header.substring(7);
 
-            // Ignore refresh tokens
             if (!jwtService.isAccessToken(token)) {
-                filterChain.doFilter(request, response);
+                chain.doFilter(request, response);
                 return;
             }
 
-            try {
-                Jws<Claims> parsed = jwtService.parse(token);
-                Claims claims = parsed.getBody();
+            if (SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                UUID userId = UserHelper.parseUUID(claims.getSubject());
+                AuthPrincipal principal = new AuthPrincipal(
+                        jwtService.getUserId(token),
+                        jwtService.getEmail(token),
+                        null, // ✅ password not needed for JWT-authenticated requests
+                        true,
+                        jwtService.getRoles(token)
+                                .stream()
+                                .map(SimpleGrantedAuthority::new)
+                                .collect(Collectors.toSet())
+                );
 
-                userRepository.findById(userId).ifPresent(user -> {
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                principal,
+                                null,
+                                principal.getAuthorities()
+                        );
 
-                    if (!user.isEnabled()) {
-                        request.setAttribute("error", "User account disabled");
-                        return;
-                    }
+                authentication.setDetails(
+                        new WebAuthenticationDetailsSource().buildDetails(request)
+                );
 
-                    List<GrantedAuthority> authorities =
-                            user.getRoles() == null ? List.of() :
-                                    user.getRoles().stream()
-                                            .map(r -> new SimpleGrantedAuthority(r.getName()))
-                                            .collect(Collectors.toList());
-
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(
-                                    user.getEmail(),
-                                    null,
-                                    authorities
-                            );
-
-                    authentication.setDetails(
-                            new WebAuthenticationDetailsSource().buildDetails(request)
-                    );
-
-                    if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                        SecurityContextHolder.getContext().setAuthentication(authentication);
-                    }
-                });
-
-            } catch (ExpiredJwtException e) {
-                request.setAttribute("error", "Token Expired");
-                return;
-
-            } catch (JwtException e) {
-                request.setAttribute("error", "Invalid Token");
-                return;
+                SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         }
 
-        filterChain.doFilter(request, response);
+        chain.doFilter(request, response);
     }
-
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

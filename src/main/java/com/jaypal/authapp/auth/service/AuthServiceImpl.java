@@ -18,7 +18,7 @@ public class AuthServiceImpl implements AuthService {
         //logic
         //verify email
         //default role
-        userDto.setPassword(passwordEncoder.encode(userDto.getPassword()));
+//        userDto.setPassword(passwordEncoder.encode(userDto.getPassword()));
         return userService.createUser(userDto);
     }
 }

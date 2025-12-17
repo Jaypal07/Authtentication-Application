@@ -1,17 +1,17 @@
 package com.jaypal.authapp.user.service;
 
-import com.jaypal.authapp.dto.UserDto;
-import com.jaypal.authapp.user.model.Provider;
-import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.common.exception.ResourceNotFoundExceptions;
-import com.jaypal.authapp.common.util.UserHelper;
+import com.jaypal.authapp.dto.*;
+import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -19,90 +19,110 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
-    private final ModelMapper modelMapper;
+    private final PasswordEncoder passwordEncoder;
+    private final ModelMapper mapper;
 
     @Override
     @Transactional
-    public UserDto createUser(UserDto userDto) {
+    public UserResponseDto createUser(UserCreateRequest req) {
 
-        if(userDto.getEmail() == null || userDto.getEmail().isBlank()) {
-            throw new IllegalArgumentException("Email is required");
-        }
-        if (userRepository.existsByEmail(userDto.getEmail())) {
+        try {
+            User user = User.createLocal(
+                    req.email(),
+                    passwordEncoder.encode(req.password()),
+                    req.name()
+            );
+
+            return toResponse(userRepository.save(user));
+
+        } catch (DataIntegrityViolationException ex) {
             throw new IllegalArgumentException("Email already exists");
         }
-
-        User user = modelMapper.map(userDto, User.class);
-        user.setProvider(userDto.getProvider() != null ? userDto.getProvider() : Provider.LOCAL);
-//        user.setProviderId(UserHelper.parseUUID(user.getId()));
-        //TODO:  assign new role to user
-
-        User savedUser = userRepository.save(user);
-
-        return modelMapper.map(savedUser, UserDto.class)
-                ;
     }
 
     @Override
-    public UserDto getUserByEmail(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new ResourceNotFoundExceptions("User not found with given email id"));
-        return modelMapper.map(user, UserDto.class);
+    @Transactional(readOnly = true)
+    public UserResponseDto getUserById(String userId) {
+        return toResponse(find(userId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserResponseDto getUserByEmail(String email) {
+        return toResponse(
+                userRepository.findByEmail(email)
+                        .orElseThrow(() ->
+                                new ResourceNotFoundExceptions(
+                                        "User not found with given email id"
+                                ))
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserResponseDto> getAllUsers() {
+        return userRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Override
     @Transactional
-    public UserDto updateUser(UserDto userDto, String userId) {
+    public UserResponseDto updateUser(
+            String userId,
+            UserUpdateRequest req
+    ) {
 
-        UUID uId = UserHelper.parseUUID(userId);
+        User user = find(userId);
 
-        User userInDb = userRepository.findById(uId)
-                .orElseThrow(() -> new ResourceNotFoundExceptions("User not found with ID: " + userId));
-        // We assume email should not be changeable
-        // if(userDto.getEmail() != null) userInDb.setEmail(userDto.getEmail());
-        if (userDto.getName() != null) {
-            userInDb.setName(userDto.getName());
+        user.updateProfile(req.name(), req.image());
+
+        if (req.password() != null && !req.password().isBlank()) {
+            user.changePassword(
+                    passwordEncoder.encode(req.password())
+            );
         }
-        if (userDto.getImage() != null) {
-            userInDb.setImage(userDto.getImage());
-        }
-        if (userDto.getProvider() != null) {
-            userInDb.setProvider(userDto.getProvider());
-        }
-        //TODO: change password update logic
-        if (userDto.getPassword() != null) userInDb.setPassword(userDto.getPassword());
 
-        userInDb.setEnabled(userDto.isEnabled());
-        userInDb.setUpdatedAt(Instant.now());
-        User savedUser = userRepository.save(userInDb);
+        return toResponse(userRepository.save(user));
+    }
 
-        return modelMapper.map(savedUser, UserDto.class);
+    @Override
+    @Transactional
+    public UserResponseDto adminUpdateUser(
+            String userId,
+            AdminUserUpdateRequest req
+    ) {
+
+        User user = find(userId);
+
+        if (req.name() != null) user.updateProfile(req.name(), req.image());
+        if (req.roles() != null) user.setRoles(req.roles().stream()
+                .map(r -> mapper.map(r, com.jaypal.authapp.user.model.Role.class))
+                .collect(java.util.stream.Collectors.toSet()));
+
+        user.setEnabled(req.enabled());
+
+        return toResponse(userRepository.save(user));
     }
 
     @Override
     @Transactional
     public void deleteUser(String userId) {
-        UUID uId = UserHelper.parseUUID(userId);
-        User user = userRepository.findById(uId)
-                .orElseThrow(() -> new ResourceNotFoundExceptions("User not found with given user id"));
-        userRepository.delete(user);
+        userRepository.delete(find(userId));
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public UserDto getUserById(String userId) {
-        UUID uId = UserHelper.parseUUID(userId);
-        User user = userRepository.findById(uId)
-                .orElseThrow(() -> new ResourceNotFoundExceptions("User not found with given user id"));
-        return modelMapper.map(user, UserDto.class);
+    // ---------------- INTERNAL ----------------
+
+    private User find(String id) {
+        return userRepository.findById(UUID.fromString(id))
+                .orElseThrow(() ->
+                        new ResourceNotFoundExceptions(
+                                "User not found with ID: " + id
+                        ));
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public Iterable<UserDto> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .map(user->modelMapper.map(user, UserDto.class))
-                .toList();
+    private UserResponseDto toResponse(User user) {
+        return mapper.map(user, UserResponseDto.class);
     }
 }

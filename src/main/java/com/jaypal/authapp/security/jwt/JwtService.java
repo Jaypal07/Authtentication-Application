@@ -1,6 +1,5 @@
 package com.jaypal.authapp.security.jwt;
 
-import com.jaypal.authapp.user.model.Role;
 import com.jaypal.authapp.user.model.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
@@ -19,8 +18,6 @@ public class JwtService {
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_ROLES = "roles";
     private static final String CLAIM_TYPE = "typ";
-    private static final String TYPE_ACCESS = "access";
-    private static final String TYPE_REFRESH = "refresh";
 
     private final SecretKey secretKey;
     private final long accessTtlSeconds;
@@ -31,8 +28,8 @@ public class JwtService {
             @Value("${security.jwt.secret}") String secret,
             @Value("${security.jwt.access-ttl-seconds}") long accessTtlSeconds,
             @Value("${security.jwt.refresh-ttl-seconds}") long refreshTtlSeconds,
-            @Value("${security.jwt.issuer}") String issuer) {
-
+            @Value("${security.jwt.issuer}") String issuer
+    ) {
         validateSecret(secret);
         this.secretKey = JwtUtils.createKey(secret);
         this.accessTtlSeconds = accessTtlSeconds;
@@ -40,16 +37,15 @@ public class JwtService {
         this.issuer = issuer;
     }
 
-    // -------------------------------------------------------------------------
-    // Token Generation
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------
+    // GENERATION
+    // -------------------------------------------------
 
     public String generateAccessToken(User user) {
 
         Map<String, Object> claims = new HashMap<>();
-
-        claims.put(CLAIM_TYPE, TYPE_ACCESS);
-        claims.put(CLAIM_ROLES, extractRoleNames(user));
+        claims.put(CLAIM_TYPE, TokenType.ACCESS.name().toLowerCase());
+        claims.put(CLAIM_ROLES, extractRoles(user));
 
         if (user.getEmail() != null) {
             claims.put(CLAIM_EMAIL, user.getEmail());
@@ -67,7 +63,7 @@ public class JwtService {
     public String generateRefreshToken(User user, String jti) {
 
         Map<String, Object> claims = new HashMap<>();
-        claims.put(CLAIM_TYPE, TYPE_REFRESH);
+        claims.put(CLAIM_TYPE, TokenType.REFRESH.name().toLowerCase());
 
         return JwtUtils.buildRefreshToken(
                 secretKey,
@@ -79,56 +75,65 @@ public class JwtService {
         );
     }
 
-
-    // -------------------------------------------------------------------------
-    // Validation
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------
+    // VALIDATION
+    // -------------------------------------------------
 
     public boolean isAccessToken(String token) {
-        return TYPE_ACCESS.equals(JwtUtils.getClaim(secretKey, token, CLAIM_TYPE));
+        return getTokenType(token) == TokenType.ACCESS;
     }
 
     public boolean isRefreshToken(String token) {
-        return TYPE_REFRESH.equals(JwtUtils.getClaim(secretKey, token, CLAIM_TYPE));
+        return getTokenType(token) == TokenType.REFRESH;
     }
 
     public UUID getUserId(String token) {
         return JwtUtils.getSubjectId(secretKey, token);
     }
 
+    public String getEmail(String token) {
+        return (String) JwtUtils.getClaim(secretKey, token, CLAIM_EMAIL);
+    }
+
     public String getJti(String token) {
         return JwtUtils.getJti(secretKey, token);
     }
 
-    public Jws<Claims> parse(String token) {
-        return JwtUtils.parse(secretKey, token);
-    }
-
     public List<String> getRoles(String token) {
-        Claims c = parse(token).getBody();
-        return (List<String>) c.get("roles");
+        Object raw = JwtUtils.getClaim(secretKey, token, CLAIM_ROLES);
+        if (raw == null) return List.of();
+
+        if (!(raw instanceof List<?> list)) {
+            throw new IllegalStateException("Invalid roles claim");
+        }
+
+        return list.stream()
+                .map(String.class::cast)
+                .collect(Collectors.toList());
     }
 
-    public String getEmail(String token) {
-        Claims c = parse(token).getBody();
-        return (String) c.get("email");
+    private TokenType getTokenType(String token) {
+        String raw = (String) JwtUtils.getClaim(secretKey, token, CLAIM_TYPE);
+        return TokenType.from(raw);
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------
+    // INTERNAL
+    // -------------------------------------------------
 
-    private List<String> extractRoleNames(User user) {
+    private List<String> extractRoles(User user) {
         if (user.getRoles() == null) return List.of();
-        return user.getRoles().stream()
-                .map(Role::getName)
+        return user.getRoles()
+                .stream()
+                .map(r -> r.getName())
                 .collect(Collectors.toList());
     }
 
     private void validateSecret(String secret) {
         if (secret == null || secret.length() < 64) {
-            throw new IllegalArgumentException("JWT secret must be at least 64 characters long.");
+            throw new IllegalArgumentException(
+                    "JWT secret must be at least 64 characters long"
+            );
         }
     }
-
 }

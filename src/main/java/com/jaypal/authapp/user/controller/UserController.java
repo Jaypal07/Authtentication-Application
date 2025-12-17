@@ -1,52 +1,57 @@
 package com.jaypal.authapp.user.controller;
 
-import com.jaypal.authapp.dto.UserDto;
+import com.jaypal.authapp.dto.AdminUserUpdateRequest;
+import com.jaypal.authapp.dto.UserCreateRequest;
+import com.jaypal.authapp.dto.UserResponseDto;
 import com.jaypal.authapp.user.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
 
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 public class UserController {
 
     private final UserService userService;
 
-    //create user api
     @PostMapping
-    public ResponseEntity<UserDto> createUser(@RequestBody UserDto userDto) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userService.createUser(userDto));
+    public ResponseEntity<UserResponseDto> create(
+            @RequestBody @Valid UserCreateRequest req
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(userService.createUser(req));
     }
 
-    //get all user api
     @GetMapping
-    public ResponseEntity<Iterable<UserDto>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public List<UserResponseDto> all() {
+        return userService.getAllUsers();
     }
 
-    //Get user by email
-    @GetMapping("/email/{email}")
-    public ResponseEntity<UserDto> getUserByEmail(@PathVariable("email") String email) {
-        return ResponseEntity.ok(userService.getUserByEmail(email));
+    @GetMapping("/{id}")
+    public UserResponseDto get(@PathVariable String id) {
+        return userService.getUserById(id);
     }
 
-    //delete user
-    @DeleteMapping("/{userId}")
-    public void deleteUser(@PathVariable String userId) {
-        userService.deleteUser(userId);
+    @PutMapping("/{id}")
+    public UserResponseDto adminUpdate(
+            @PathVariable String id,
+            @RequestBody AdminUserUpdateRequest req
+    ) {
+        return userService.adminUpdateUser(id, req);
     }
 
-    //update user
-    @PostMapping("/{userId}")
-    public ResponseEntity<UserDto> updateUser(@RequestBody UserDto userDto,  @PathVariable String userId) {
-        return ResponseEntity.ok(userService.updateUser(userDto,userId));
-    }
-
-    //get user by id
-    @GetMapping("/{userId}")
-    public ResponseEntity<UserDto> getUserById(@PathVariable String userId) {
-        return ResponseEntity.ok(userService.getUserById(userId));
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        userService.deleteUser(id);
+        return ResponseEntity.noContent().build();
     }
 }

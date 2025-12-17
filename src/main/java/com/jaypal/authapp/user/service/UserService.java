@@ -1,24 +1,25 @@
 package com.jaypal.authapp.user.service;
 
-import com.jaypal.authapp.dto.UserDto;
+import com.jaypal.authapp.dto.*;
+
+import java.util.List;
 
 public interface UserService {
 
-    //Create User
-    UserDto createUser(UserDto userDto);
+    UserResponseDto createUser(UserCreateRequest request);
 
-    //get user by email
-    UserDto getUserByEmail(String email);
+    UserResponseDto getUserById(String userId);
 
-    //update user
-    UserDto updateUser(UserDto userDto, String userId);
+    UserResponseDto getUserByEmail(String email);
 
-    //delete user
+    List<UserResponseDto> getAllUsers();
+
+    UserResponseDto updateUser(String userId, UserUpdateRequest request);
+
+    UserResponseDto adminUpdateUser(
+            String userId,
+            AdminUserUpdateRequest request
+    );
+
     void deleteUser(String userId);
-
-    //get user by id
-    UserDto getUserById(String userId);
-
-    //get all users
-    Iterable<UserDto> getAllUsers();
 }

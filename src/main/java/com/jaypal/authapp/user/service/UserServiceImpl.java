@@ -2,6 +2,7 @@ package com.jaypal.authapp.user.service;
 
 import com.jaypal.authapp.common.exception.ResourceNotFoundExceptions;
 import com.jaypal.authapp.dto.*;
+import com.jaypal.authapp.user.model.Role;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -93,18 +95,29 @@ public class UserServiceImpl implements UserService {
             String userId,
             AdminUserUpdateRequest req
     ) {
-
         User user = find(userId);
 
-        if (req.name() != null) user.updateProfile(req.name(), req.image());
-        if (req.roles() != null) user.setRoles(req.roles().stream()
-                .map(r -> mapper.map(r, com.jaypal.authapp.user.model.Role.class))
-                .collect(java.util.stream.Collectors.toSet()));
+        if (req.name() != null || req.image() != null) {
+            user.updateProfile(req.name(), req.image());
+        }
 
-        user.setEnabled(req.enabled());
+        if (req.roles() != null) {
+            user.setRoles(
+                    req.roles().stream()
+                            .map(r -> mapper.map(r, Role.class))
+                            .collect(Collectors.toSet())
+            );
+        }
+
+        if (req.enabled()) {
+            user.enable();
+        } else {
+            user.disable();
+        }
 
         return toResponse(userRepository.save(user));
     }
+
 
     @Override
     @Transactional

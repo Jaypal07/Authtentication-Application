@@ -110,6 +110,17 @@ public class User {
 
     // ---------------- DOMAIN INTENT ----------------
 
+    public void enable() {
+        this.enabled = true;
+        this.updatedAt = Instant.now();
+    }
+
+    public void setRoles(Set<Role> roles) {
+        this.roles.clear();
+        this.roles.addAll(roles);
+        this.updatedAt = Instant.now();
+    }
+
     public void updateProfile(String name, String image) {
         if (name != null) this.name = name;
         if (image != null) this.image = image;

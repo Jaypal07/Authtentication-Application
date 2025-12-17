@@ -15,6 +15,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
+@Deprecated
 public class UserDto {
     private UUID id;
     private String email;

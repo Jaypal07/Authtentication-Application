@@ -1,6 +1,6 @@
 package com.jaypal.authapp.dto;
 
-import com.jaypal.authapp.entity.Provider;
+import com.jaypal.authapp.user.model.Provider;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

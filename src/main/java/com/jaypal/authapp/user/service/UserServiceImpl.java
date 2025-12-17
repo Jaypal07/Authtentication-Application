@@ -2,6 +2,7 @@ package com.jaypal.authapp.user.service;
 
 import com.jaypal.authapp.common.exception.ResourceNotFoundExceptions;
 import com.jaypal.authapp.dto.*;
+import com.jaypal.authapp.user.mapper.UserMapper;
 import com.jaypal.authapp.user.model.Role;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
@@ -34,8 +35,7 @@ public class UserServiceImpl implements UserService {
                     passwordEncoder.encode(req.password()),
                     req.name()
             );
-
-            return toResponse(userRepository.save(user));
+            return UserMapper.toResponse(userRepository.save(user));
 
         } catch (DataIntegrityViolationException ex) {
             throw new IllegalArgumentException("Email already exists");
@@ -45,7 +45,7 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(readOnly = true)
     public UserResponseDto getUserById(String userId) {
-        return toResponse(find(userId));
+        return UserMapper.toResponse(find(userId));
     }
 
     @Override
@@ -136,6 +136,6 @@ public class UserServiceImpl implements UserService {
     }
 
     private UserResponseDto toResponse(User user) {
-        return mapper.map(user, UserResponseDto.class);
+        return UserMapper.toResponse(user);
     }
 }

@@ -1,20 +1,21 @@
 package com.jaypal.authapp.auth.controller;
 
+import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.dto.LoginRequest;
 import com.jaypal.authapp.auth.dto.RefreshTokenRequest;
 import com.jaypal.authapp.auth.dto.TokenResponse;
-import com.jaypal.authapp.dto.*;
-import com.jaypal.authapp.security.jwt.JwtService;
+import com.jaypal.authapp.auth.service.AuthService;
 import com.jaypal.authapp.infrastructure.cookie.CookieService;
+import com.jaypal.authapp.security.jwt.JwtService;
+import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.token.service.RefreshTokenService;
-import com.jaypal.authapp.user.model.User;
+import com.jaypal.authapp.user.mapper.UserMapper;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.*;
@@ -32,10 +33,10 @@ import java.util.UUID;
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
+    private final AuthService authApplicationService;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final CookieService cookieService;
-    private final ModelMapper modelMapper;
 
     // ---------------- LOGIN ----------------
 
@@ -49,33 +50,24 @@ public class AuthController {
         Authentication authentication = authenticate(request);
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        User user = (User) authentication.getPrincipal();
+        AuthPrincipal principal =
+                (AuthPrincipal) authentication.getPrincipal();
 
-        RefreshToken refreshToken =
-                refreshTokenService.issue(
-                        user,
-                        jwtService.getRefreshTtlSeconds()
-                );
-
-        String accessToken = jwtService.generateAccessToken(user);
-        String refreshJwt =
-                jwtService.generateRefreshToken(
-                        user,
-                        refreshToken.getJti()
-                );
+        AuthLoginResult result =
+                authApplicationService.login(principal);
 
         cookieService.attachRefreshCookie(
                 response,
-                refreshJwt,
-                (int) jwtService.getRefreshTtlSeconds()
+                result.refreshToken(),
+                (int) result.refreshTtlSeconds()
         );
         cookieService.addNoStoreHeader(response);
 
         return ResponseEntity.ok(
                 TokenResponse.of(
-                        accessToken,
+                        result.accessToken(),
                         jwtService.getAccessTtlSeconds(),
-                        modelMapper.map(user, UserDto.class)
+                        UserMapper.toResponse(result.user())
                 )
         );
     }
@@ -130,7 +122,7 @@ public class AuthController {
                 TokenResponse.of(
                         accessToken,
                         jwtService.getAccessTtlSeconds(),
-                        modelMapper.map(current.getUser(), UserDto.class)
+                        UserMapper.toResponse(current.getUser())
                 )
         );
     }

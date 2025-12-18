@@ -3,6 +3,7 @@ package com.jaypal.authapp.auth.service;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.repositoty.PasswordResetTokenRepository;
 import com.jaypal.authapp.dto.UserCreateRequest;
+import com.jaypal.authapp.infrastructure.email.EmailService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.token.model.RefreshToken;
@@ -12,6 +13,7 @@ import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
 import com.jaypal.authapp.user.service.UserService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,6 +32,11 @@ public class AuthService {
     private final UserService userService;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
+
+    @Value("${app.frontend.base-url}")
+    private String frontendBaseUrl;
+
 
     @Transactional
     public User register(UserCreateRequest request) {
@@ -99,12 +106,25 @@ public class AuthService {
 
             passwordResetTokenRepository.save(token);
 
-            // TODO send email
+            String resetLink =
+                    frontendBaseUrl +
+                            "/reset-password?token=" +
+                            token.getToken();
+
+            emailService.sendPasswordResetEmail(
+                    user.getEmail(),
+                    resetLink
+            );
         });
     }
 
+
     @Transactional
     public void resetPassword(String tokenValue, String rawPassword) {
+
+        if (rawPassword.length() < 8) {
+            throw new IllegalArgumentException("Password too short");
+        }
 
         PasswordResetToken token =
                 passwordResetTokenRepository.findByToken(tokenValue)

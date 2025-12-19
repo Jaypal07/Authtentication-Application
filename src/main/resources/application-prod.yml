@@ -1,11 +1,14 @@
 server:
   port: ${SERVER_PORT:8081}
+  forward-headers-strategy: framework
 
-app:
-  frontend:
-    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+  ssl:
+    enabled: false
 
 spring:
+  application:
+    name: Auth-App-Backend
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -75,11 +78,9 @@ spring:
           starttls:
             enable: ${MAIL_SMTP_STARTTLS_ENABLE}
 
-logging:
-  level:
-    root: INFO
-    org.springframework.security: ${SECURITY_LOG_LEVEL}
-    org.hibernate.SQL: ${HIBERNATE_SQL_LOG_LEVEL}
+app:
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
 
 security:
   jwt:
@@ -92,3 +93,9 @@ security:
     cookie-http-only: ${JWT_COOKIE_HTTP_ONLY}
     cookie-same-site: ${JWT_COOKIE_SAME_SITE}
     cookie-domain: ${JWT_COOKIE_DOMAIN}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: ${SECURITY_LOG_LEVEL}
+    org.hibernate.SQL: ${HIBERNATE_SQL_LOG_LEVEL}

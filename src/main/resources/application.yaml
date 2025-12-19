@@ -1,8 +1,8 @@
 server:
   port: ${SERVER_PORT:8081}
 
+spring:
   application:
     name: Auth-App-Backend
-
   profiles:
     active: prod

@@ -14,7 +14,7 @@ import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
 import com.jaypal.authapp.user.service.UserService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,6 +25,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -35,12 +36,15 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final FrontendProperties frontendProperties;
+    private final EmailVerificationService  emailVerificationService;
 
 
     @Transactional
-    public User register(UserCreateRequest request) {
-        return userService.createAndReturnDomainUser(request);
+    public void register(UserCreateRequest request) {
+        User user = userService.createAndReturnDomainUser(request);
+        emailVerificationService.createVerificationToken(user);
     }
+
 
     @Transactional
     public AuthLoginResult issueTokens(User user) {
@@ -91,57 +95,53 @@ public class AuthService {
 
     @Transactional
     public void initiatePasswordReset(String email) {
+        log.info("Password reset requested for: {}", email);
 
-        userRepository.findByEmail(email).ifPresent(user -> {
-
+        userRepository.findByEmail(email).ifPresentOrElse(user -> {
+            // Clear old tokens
             passwordResetTokenRepository.deleteAllByUser_Id(user.getId());
 
-            PasswordResetToken token =
-                    PasswordResetToken.builder()
-                            .token(UUID.randomUUID().toString())
-                            .user(user)
-                            .expiresAt(Instant.now().plusSeconds(900))
-                            .build();
+            String tokenValue = UUID.randomUUID().toString();
+            PasswordResetToken token = PasswordResetToken.builder()
+                    .token(tokenValue)
+                    .user(user)
+                    .expiresAt(Instant.now().plusSeconds(900)) // 15 mins
+                    .build();
 
             passwordResetTokenRepository.save(token);
 
-            String resetLink =
-                    frontendProperties.getBaseUrl() +
-                            "/reset-password?token=" +
-                            token.getToken();
+            String resetLink = frontendProperties.getBaseUrl()+"/reset-password?token=" + tokenValue;
 
-            emailService.sendPasswordResetEmail(
-                    user.getEmail(),
-                    resetLink
-            );
-        });
+            try {
+                emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+                log.info("Reset email sent successfully to {}", email);
+            } catch (Exception e) {
+                log.error("Failed to send email to {}: {}", email, e.getMessage());
+            }
+        }, () -> log.warn("Reset requested for non-existent email: {}", email));
     }
 
 
     @Transactional
     public void resetPassword(String tokenValue, String rawPassword) {
-
-        if (rawPassword.length() < 8) {
+        if (rawPassword == null || rawPassword.length() < 8) {
             throw new IllegalArgumentException("Password too short");
         }
 
-        PasswordResetToken token =
-                passwordResetTokenRepository.findByToken(tokenValue)
-                        .orElseThrow(() ->
-                                new BadCredentialsException("Invalid reset token"));
+        PasswordResetToken token = passwordResetTokenRepository.findByToken(tokenValue)
+                .orElseThrow(() -> new BadCredentialsException("Invalid reset token"));
 
-        if (token.isUsed()
-                || token.getExpiresAt().isBefore(Instant.now())) {
-            throw new BadCredentialsException("Reset token expired");
+        if (token.isUsed() || token.getExpiresAt().isBefore(Instant.now())) {
+            throw new BadCredentialsException("Reset token expired or already used");
         }
 
         User user = token.getUser();
         user.changePassword(passwordEncoder.encode(rawPassword));
-
         token.setUsed(true);
 
         userRepository.save(user);
         passwordResetTokenRepository.save(token);
+        log.info("Password successfully updated for user: {}", user.getEmail());
     }
 
 

@@ -1,6 +1,6 @@
 package com.jaypal.authapp.user.service;
 
-import com.jaypal.authapp.exception.ResourceNotFoundExceptions;
+import com.jaypal.authapp.exception.ResourceNotFoundException;
 import com.jaypal.authapp.dto.*;
 import com.jaypal.authapp.user.mapper.UserMapper;
 import com.jaypal.authapp.user.model.Role;
@@ -54,7 +54,7 @@ public class UserServiceImpl implements UserService {
         return toResponse(
                 userRepository.findByEmail(email)
                         .orElseThrow(() ->
-                                new ResourceNotFoundExceptions(
+                                new ResourceNotFoundException(
                                         "User not found with given email id"
                                 ))
         );
@@ -149,7 +149,7 @@ public class UserServiceImpl implements UserService {
     private User find(String id) {
         return userRepository.findById(UUID.fromString(id))
                 .orElseThrow(() ->
-                        new ResourceNotFoundExceptions(
+                        new ResourceNotFoundException(
                                 "User not found with ID: " + id
                         ));
     }

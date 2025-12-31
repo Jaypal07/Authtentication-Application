@@ -4,7 +4,7 @@ public enum AuthAuditEvent {
 
     LOGIN_SUCCESS,
     LOGIN_FAILURE,
-    REGISTER_AND_LOGIN,
+    REGISTER,
 
     OAUTH_LOGIN_SUCCESS,
     OAUTH_LOGIN_FAILURE,

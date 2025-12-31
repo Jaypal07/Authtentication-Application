@@ -13,6 +13,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -21,7 +22,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
-import javax.security.auth.login.CredentialException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -33,7 +33,7 @@ public class GlobalExceptionHandler {
     private final AuthAuditService authAuditService;
 
     // ---------------------------------------------------------
-    // Utility: Extract request path
+    // Utility Methods
     // ---------------------------------------------------------
     private String extractPath(WebRequest request) {
         if (request instanceof ServletWebRequest servletRequest) {
@@ -42,9 +42,6 @@ public class GlobalExceptionHandler {
         return "N/A";
     }
 
-    // ---------------------------------------------------------
-    // Utility: Build standard error response
-    // ---------------------------------------------------------
     private ResponseEntity<ErrorResponse> buildErrorResponse(
             String message,
             HttpStatus status,
@@ -56,19 +53,34 @@ public class GlobalExceptionHandler {
                 status.getReasonPhrase(),
                 message
         );
-
         return ResponseEntity.status(status).body(errorResponse);
     }
 
     // ---------------------------------------------------------
     // Authentication Exceptions
     // ---------------------------------------------------------
+
+    // 1. Specifically handle unverified accounts
+    @ExceptionHandler(DisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDisabled(
+            DisabledException ex,
+            HttpServletRequest request
+    ) {
+        log.warn("Unverified login attempt at {}: {}", request.getRequestURI(), ex.getMessage());
+
+        return buildErrorResponse(
+                "Please verify your email address before logging in.",
+                HttpStatus.FORBIDDEN, // 403 is standard for "we know who you are but you aren't allowed yet"
+                request.getRequestURI()
+        );
+    }
+
+    // 2. Handle Bad Credentials (Wrong password/email)
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
             BadCredentialsException ex,
             HttpServletRequest request
     ) {
-        // Audit login failure
         authAuditService.log(
                 null,
                 AuthAuditEvent.LOGIN_FAILURE,
@@ -87,8 +99,9 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler({UsernameNotFoundException.class, DisabledException.class, CredentialException.class})
-    public ResponseEntity<ErrorResponse> handleAuthenticationExceptions(
+    // 3. Catch remaining Auth issues (UsernameNotFound, Locked, etc.)
+    @ExceptionHandler({UsernameNotFoundException.class, LockedException.class})
+    public ResponseEntity<ErrorResponse> handleOtherAuthExceptions(
             Exception ex,
             HttpServletRequest request
     ) {
@@ -102,7 +115,7 @@ public class GlobalExceptionHandler {
     }
 
     // ---------------------------------------------------------
-    // Authorization Exceptions (method-security + access denied)
+    // Authorization / Access Denied
     // ---------------------------------------------------------
     @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
     public ResponseEntity<ErrorResponse> handleAccessDenied(
@@ -120,25 +133,7 @@ public class GlobalExceptionHandler {
     }
 
     // ---------------------------------------------------------
-    // Resource Not Found
-    // ---------------------------------------------------------
-    @ExceptionHandler(ResourceNotFoundExceptions.class)
-    public ResponseEntity<ErrorResponse> handleResourceNotFound(
-            ResourceNotFoundExceptions ex,
-            WebRequest request
-    ) {
-        String path = extractPath(request);
-        log.warn("Resource not found at {}: {}", path, ex.getMessage());
-
-        return buildErrorResponse(
-                ex.getMessage(),
-                HttpStatus.NOT_FOUND,
-                path
-        );
-    }
-
-    // ---------------------------------------------------------
-    // Validation Errors (DTO/RequestBody)
+    // Validation & Data Integrity
     // ---------------------------------------------------------
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
@@ -146,26 +141,16 @@ public class GlobalExceptionHandler {
             WebRequest request
     ) {
         String path = extractPath(request);
-        log.warn("Data integrity violation at {}: {}", path, ex.getMessage());
-
-        // Default message
         String message = "Data integrity error";
 
-        // Inspect root cause message for unique constraint on email
         if (ex.getRootCause() != null) {
             String rootMessage = ex.getRootCause().getMessage().toLowerCase();
-
-            // Check for common patterns for email uniqueness violation
             if (rootMessage.contains("unique") && rootMessage.contains("email")) {
                 message = "Email already exists";
             }
         }
 
-        return buildErrorResponse(
-                message,
-                HttpStatus.BAD_REQUEST,
-                path
-        );
+        return buildErrorResponse(message, HttpStatus.BAD_REQUEST, path);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -174,42 +159,25 @@ public class GlobalExceptionHandler {
             WebRequest request
     ) {
         String path = extractPath(request);
-
         Map<String, String> fieldErrors = new HashMap<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
             fieldErrors.put(error.getField(), error.getDefaultMessage());
         }
 
-        log.warn("Validation errors at {}: {}", path, fieldErrors);
-
-        return buildErrorResponse(
-                fieldErrors.toString(),
-                HttpStatus.BAD_REQUEST,
-                path
-        );
+        return buildErrorResponse(fieldErrors.toString(), HttpStatus.BAD_REQUEST, path);
     }
 
     // ---------------------------------------------------------
-    // Bad Request (illegal arguments, etc.)
+    // Fallbacks
     // ---------------------------------------------------------
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgument(
-            IllegalArgumentException ex,
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException ex,
             WebRequest request
     ) {
-        String path = extractPath(request);
-        log.warn("Illegal argument at {}: {}", path, ex.getMessage());
-
-        return buildErrorResponse(
-                ex.getMessage(),
-                HttpStatus.BAD_REQUEST,
-                path
-        );
+        return buildErrorResponse(ex.getMessage(), HttpStatus.NOT_FOUND, extractPath(request));
     }
 
-    // ---------------------------------------------------------
-    // Fallback: Generic Exception Handler
-    // ---------------------------------------------------------
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(
             Exception ex,
@@ -219,7 +187,7 @@ public class GlobalExceptionHandler {
         log.error("Unexpected error at {}: {}", path, ex.getMessage(), ex);
 
         return buildErrorResponse(
-                "An unexpected error occurred. Please try again later.",
+                "An unexpected error occurred.",
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 path
         );

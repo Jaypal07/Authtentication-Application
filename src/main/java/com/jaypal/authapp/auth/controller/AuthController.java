@@ -2,11 +2,9 @@ package com.jaypal.authapp.auth.controller;
 
 import com.jaypal.authapp.audit.annotation.AuthAudit;
 import com.jaypal.authapp.audit.model.AuthAuditEvent;
-import com.jaypal.authapp.auth.dto.AuthLoginResult;
-import com.jaypal.authapp.auth.dto.LoginRequest;
-import com.jaypal.authapp.auth.dto.RefreshTokenRequest;
-import com.jaypal.authapp.auth.dto.TokenResponse;
+import com.jaypal.authapp.auth.dto.*;
 import com.jaypal.authapp.auth.service.AuthService;
+import com.jaypal.authapp.auth.service.EmailVerificationService;
 import com.jaypal.authapp.dto.ForgotPasswordRequest;
 import com.jaypal.authapp.dto.UserCreateRequest;
 import com.jaypal.authapp.infrastructure.cookie.CookieService;
@@ -45,33 +43,33 @@ public class AuthController {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final CookieService cookieService;
+    private final EmailVerificationService emailVerificationService;
 
     // ---------------- REGISTER ----------------
 
-    @AuthAudit(event = AuthAuditEvent.REGISTER_AND_LOGIN)
+    @AuthAudit(event = AuthAuditEvent.REGISTER)
     @PostMapping("/register")
-    public ResponseEntity<TokenResponse> register(
-            @RequestBody @Valid UserCreateRequest request,
-            HttpServletResponse response
+    public ResponseEntity<String> register(
+            @RequestBody @Valid UserCreateRequest request
     ) {
+        authApplicationService.register(request);
 
-        var user = authApplicationService.register(request);
-        var result = authApplicationService.issueTokens(user);
+        // Do NOT issue tokens here.
+        // Return a message telling them to check their inbox.
+        return ResponseEntity.status(201).body("Registration successful. Please check your email to verify your account.");
+    }
 
-        cookieService.attachRefreshCookie(
-                response,
-                result.refreshToken(),
-                (int) result.refreshTtlSeconds()
-        );
-        cookieService.addNoStoreHeader(response);
+    // Add the verification callback endpoint
+    @GetMapping("/email-verify")
+    public ResponseEntity<String> verifyEmail(@RequestParam String token) {
+        emailVerificationService.verifyEmail(token);
+        return ResponseEntity.ok("Email verified successfully! You can now log in.");
+    }
 
-        return ResponseEntity.status(201).body(
-                TokenResponse.of(
-                        result.accessToken(),
-                        jwtService.getAccessTtlSeconds(),
-                        UserMapper.toResponse(user)
-                )
-        );
+    @PostMapping("/resend-verification")
+    public ResponseEntity<Void> resendVerification(@RequestParam String email) {
+        emailVerificationService.resendVerificationToken(email);
+        return ResponseEntity.noContent().build();
     }
 
     // ---------------- LOGIN ----------------
@@ -207,6 +205,14 @@ public class AuthController {
 
         authApplicationService.initiatePasswordReset(request.email());
         return ResponseEntity.noContent().build();
+    }
+
+    // ---------------- RESET PASSWORD ----------------
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@RequestBody ResetPasswordRequest request) {
+        authApplicationService.resetPassword(request.token(), request.newPassword());
+        return ResponseEntity.ok("Password has been reset successfully.");
     }
 
     // ---------------- HELPERS ----------------

@@ -2,18 +2,21 @@ package com.jaypal.authapp.auth.service;
 
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.event.UserRegisteredEvent;
+import com.jaypal.authapp.auth.model.PasswordResetToken;
 import com.jaypal.authapp.auth.repositoty.PasswordResetTokenRepository;
 import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.dto.UserCreateRequest;
-import com.jaypal.authapp.infrastructure.email.EmailService;
-import com.jaypal.authapp.security.principal.AuthPrincipal;
+import com.jaypal.authapp.auth.infrastructure.email.EmailService;
 import com.jaypal.authapp.security.jwt.JwtService;
+import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.token.service.RefreshTokenService;
-import com.jaypal.authapp.auth.model.PasswordResetToken;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
 import com.jaypal.authapp.user.service.UserService;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -38,106 +41,167 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final FrontendProperties frontendProperties;
-    private final EmailVerificationService  emailVerificationService;
+    private final EmailVerificationService emailVerificationService;
     private final ApplicationEventPublisher eventPublisher;
 
+    // ---------- REGISTER ----------
 
     @Transactional
     public void register(UserCreateRequest request) {
         User user = userService.createAndReturnDomainUser(request);
-
-        // Publish event. No email sent here.
         eventPublisher.publishEvent(new UserRegisteredEvent(user));
     }
 
-
-    @Transactional
-    public AuthLoginResult issueTokens(User user) {
-
-        RefreshToken refreshToken =
-                refreshTokenService.issue(
-                        user,
-                        jwtService.getRefreshTtlSeconds()
-                );
-
-        return new AuthLoginResult(
-                user,
-                jwtService.generateAccessToken(user),
-                jwtService.generateRefreshToken(
-                        user,
-                        refreshToken.getJti()
-                ),
-                jwtService.getRefreshTtlSeconds()
-        );
-    }
-
+    // ---------- LOGIN ----------
 
     @Transactional
     public AuthLoginResult login(AuthPrincipal principal) {
 
         User user = userRepository.findById(principal.getUserId())
                 .orElseThrow(() ->
-                        new IllegalStateException(
-                                "Authenticated user not found"
-                        ));
+                        new IllegalStateException("Authenticated user not found"));
 
-        RefreshToken refreshToken =
-                refreshTokenService.issue(
-                        user,
+        return issueTokens(user);
+    }
+
+    // ---------- REFRESH ----------
+
+    @Transactional
+    public AuthLoginResult refresh(String refreshJwt) {
+
+        Jws<Claims> parsed;
+        try {
+            parsed = jwtService.parse(refreshJwt);
+        } catch (JwtException ex) {
+            throw new BadCredentialsException("Invalid refresh token");
+        }
+
+        if (!jwtService.isRefreshToken(parsed)) {
+            throw new BadCredentialsException("Invalid token type");
+        }
+
+        Claims claims = parsed.getBody();
+        UUID userId = UUID.fromString(claims.getSubject());
+        String jti = claims.getId();
+        log.info("REFRESH JWT parsed. jti={}, userId={}", jti, userId);
+        RefreshToken current =
+                refreshTokenService.validate(jti, userId);
+
+        RefreshToken next =
+                refreshTokenService.rotate(
+                        current,
                         jwtService.getRefreshTtlSeconds()
                 );
 
         return new AuthLoginResult(
-                user,
-                jwtService.generateAccessToken(user),
+                current.getUser(),
+                jwtService.generateAccessToken(current.getUser()),
                 jwtService.generateRefreshToken(
-                        user,
-                        refreshToken.getJti()
+                        current.getUser(),
+                        next.getJti()
                 ),
                 jwtService.getRefreshTtlSeconds()
         );
     }
 
+    // ---------- LOGOUT ----------
+
+    @Transactional
+    public void logout(String refreshJwt) {
+
+        Jws<Claims> parsed;
+        try {
+            parsed = jwtService.parse(refreshJwt);
+        } catch (JwtException ex) {
+            return; // idempotent logout
+        }
+
+        if (!jwtService.isRefreshToken(parsed)) {
+            return;
+        }
+
+        Claims claims = parsed.getBody();
+
+        UUID userId;
+        try {
+            userId = UUID.fromString(claims.getSubject());
+        } catch (IllegalArgumentException ex) {
+            return;
+        }
+
+        String jti = claims.getId();
+        if (jti == null || jti.isBlank()) {
+            return;
+        }
+
+        refreshTokenService.revoke(jti, userId);
+    }
+
+
+    // ---------- EMAIL ----------
+
+    @Transactional
+    public void verifyEmail(String token) {
+        emailVerificationService.verifyEmail(token);
+    }
+
+    @Transactional
+    public void resendVerification(String email) {
+        emailVerificationService.resendVerificationToken(email);
+    }
+
+    // ---------- PASSWORD RESET ----------
+
     @Transactional
     public void initiatePasswordReset(String email) {
-        log.info("Password reset requested for: {}", email);
 
-        userRepository.findByEmail(email).ifPresentOrElse(user -> {
-            // Clear old tokens
-            passwordResetTokenRepository.deleteAllByUser_Id(user.getId());
+        userRepository.findByEmail(email).ifPresent(user -> {
+
+            passwordResetTokenRepository
+                    .deleteAllByUser_Id(user.getId());
 
             String tokenValue = UUID.randomUUID().toString();
             PasswordResetToken token = PasswordResetToken.builder()
                     .token(tokenValue)
                     .user(user)
-                    .expiresAt(Instant.now().plusSeconds(900)) // 15 mins
+                    .expiresAt(Instant.now().plusSeconds(900))
                     .build();
 
             passwordResetTokenRepository.save(token);
 
-            String resetLink = frontendProperties.getBaseUrl()+"/reset-password?token=" + tokenValue;
+            String link =
+                    frontendProperties.getBaseUrl()
+                            + "/reset-password?token=" + tokenValue;
 
             try {
-                emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
-                log.info("Reset email sent successfully to {}", email);
+                emailService.sendPasswordResetEmail(
+                        user.getEmail(),
+                        link
+                );
             } catch (Exception e) {
-                log.error("Failed to send email to {}: {}", email, e.getMessage());
+                log.error("Password reset email failed", e);
             }
-        }, () -> log.warn("Reset requested for non-existent email: {}", email));
+        });
     }
-
 
     @Transactional
     public void resetPassword(String tokenValue, String rawPassword) {
+
         if (rawPassword == null || rawPassword.length() < 8) {
             throw new IllegalArgumentException("Password too short");
         }
 
-        PasswordResetToken token = passwordResetTokenRepository.findByToken(tokenValue)
-                .orElseThrow(() -> new BadCredentialsException("Invalid reset token"));
+        PasswordResetToken token =
+                passwordResetTokenRepository
+                        .findByToken(tokenValue)
+                        .orElseThrow(() ->
+                                new BadCredentialsException(
+                                        "Invalid reset token"));
 
-        if (token.isUsed() || token.getExpiresAt().isBefore(Instant.now())) {
-            throw new BadCredentialsException("Reset token expired or already used");
+        if (token.isUsed()
+                || token.getExpiresAt().isBefore(Instant.now())) {
+            throw new BadCredentialsException(
+                    "Reset token expired or used");
         }
 
         User user = token.getUser();
@@ -146,8 +210,26 @@ public class AuthService {
 
         userRepository.save(user);
         passwordResetTokenRepository.save(token);
-        log.info("Password successfully updated for user: {}", user.getEmail());
     }
 
+    // ---------- INTERNAL ----------
 
+    private AuthLoginResult issueTokens(User user) {
+
+        RefreshToken refreshToken =
+                refreshTokenService.issue(
+                        user,
+                        jwtService.getRefreshTtlSeconds()
+                );
+
+        return new AuthLoginResult(
+                user,
+                jwtService.generateAccessToken(user),
+                jwtService.generateRefreshToken(
+                        user,
+                        refreshToken.getJti()
+                ),
+                jwtService.getRefreshTtlSeconds()
+        );
+    }
 }

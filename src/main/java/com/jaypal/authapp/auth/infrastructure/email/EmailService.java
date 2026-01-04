@@ -1,4 +1,4 @@
-package com.jaypal.authapp.infrastructure.email;
+package com.jaypal.authapp.auth.infrastructure.email;
 
 import org.springframework.stereotype.Service;
 

@@ -7,18 +7,29 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
+public interface RefreshTokenRepository
+        extends JpaRepository<RefreshToken, UUID> {
 
-    Optional<RefreshToken> findByJti(String jti);
+    // ---------- REFRESH FLOW (SAFE, IDENTITY ONLY) ----------
 
     @Query("""
         select rt
         from RefreshToken rt
         join fetch rt.user u
-        join fetch u.roles
         where rt.jti = :jti
     """)
-    Optional<RefreshToken> findByJtiWithUser(@Param("jti") String jti);
+    Optional<RefreshToken> findForRefresh(
+            @Param("jti") String jti
+    );
+
+    // ---------- LOGOUT / SINGLE SESSION ----------
+
+    Optional<RefreshToken> findByJtiAndUserId(
+            String jti,
+            UUID userId
+    );
+
+    // ---------- ADMIN / SECURITY ----------
 
     @Modifying
     @Query("""
@@ -28,5 +39,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
         where rt.user.id = :userId
           and rt.revoked = false
     """)
-    int revokeAllActiveByUserId(@Param("userId") UUID userId);
+    int revokeAllActiveByUserId(
+            @Param("userId") UUID userId
+    );
 }

@@ -11,8 +11,15 @@ import java.util.UUID;
 @Table(
         name = "refresh_tokens",
         indexes = {
-                @Index(name = "idx_refresh_tokens_jti", columnList = "jti", unique = true),
-                @Index(name = "idx_refresh_tokens_user_id", columnList = "user_id")
+                @Index(
+                        name = "idx_refresh_tokens_jti",
+                        columnList = "jti",
+                        unique = true
+                ),
+                @Index(
+                        name = "idx_refresh_tokens_user_id",
+                        columnList = "user_id"
+                )
         }
 )
 @Getter
@@ -55,6 +62,14 @@ public class RefreshToken {
         this.revoked = false;
     }
 
+    // Logout or admin revoke
+    public void revoke() {
+        this.revoked = true;
+        this.revokedAt = Instant.now();
+        this.replacedByToken = null;
+    }
+
+    // Rotation revoke
     public void revoke(String replacedBy) {
         this.revoked = true;
         this.revokedAt = Instant.now();

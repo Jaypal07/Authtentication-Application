@@ -3,7 +3,7 @@ package com.jaypal.authapp.auth.service;
 import com.jaypal.authapp.auth.repositoty.EmailVerificationTokenRepository;
 import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.exception.email.VerificationException;
-import com.jaypal.authapp.infrastructure.email.EmailService;
+import com.jaypal.authapp.auth.infrastructure.email.EmailService;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.model.VerificationToken;
 import com.jaypal.authapp.user.repository.UserRepository;

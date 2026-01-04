@@ -1,7 +1,7 @@
 package com.jaypal.authapp.oauth.handler;
 
 import com.jaypal.authapp.config.FrontendProperties;
-import com.jaypal.authapp.infrastructure.cookie.CookieService;
+import com.jaypal.authapp.auth.infrastructure.cookie.CookieService;
 import com.jaypal.authapp.oauth.service.OAuthLoginResult;
 import com.jaypal.authapp.oauth.service.OAuthLoginService;
 import jakarta.servlet.http.HttpServletRequest;

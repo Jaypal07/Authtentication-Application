@@ -1,4 +1,4 @@
-package com.jaypal.authapp.infrastructure.email;
+package com.jaypal.authapp.auth.infrastructure.email;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,4 @@
-package com.jaypal.authapp.infrastructure.cookie;
+package com.jaypal.authapp.auth.infrastructure.cookie;
 
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.Getter;
@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Service
 @Getter
@@ -26,6 +29,12 @@ public class CookieService {
             @Value("${security.jwt.cookie-domain}") String cookieDomain,
             @Value("${security.jwt.cookie-same-site}") String cookieSameSite
     ) {
+        if ("None".equalsIgnoreCase(cookieSameSite) && !cookieSecure) {
+            throw new IllegalStateException(
+                    "SameSite=None requires Secure=true"
+            );
+        }
+
         this.refreshTokenCookieName = refreshTokenCookieName;
         this.cookieHttpOnly = cookieHttpOnly;
         this.cookieSecure = cookieSecure;
@@ -33,44 +42,61 @@ public class CookieService {
         this.cookieSameSite = cookieSameSite;
     }
 
-    public void attachRefreshCookie(HttpServletResponse response, String value, int maxAge) {
-        log.debug("Attaching refresh cookie. name={}", refreshTokenCookieName);
+    // ---------- SET / OVERWRITE ----------
+
+    public void attachRefreshCookie(
+            HttpServletResponse response,
+            String jwt,
+            int maxAgeSeconds
+    ) {
+        String encoded =
+                URLEncoder.encode(jwt, StandardCharsets.UTF_8);
 
         ResponseCookie.ResponseCookieBuilder builder =
-                ResponseCookie.from(refreshTokenCookieName, value)
+                ResponseCookie.from(refreshTokenCookieName, encoded)
                         .httpOnly(cookieHttpOnly)
                         .secure(cookieSecure)
                         .path("/")
-                        .maxAge(maxAge)
+                        .maxAge(maxAgeSeconds)
                         .sameSite(cookieSameSite);
 
         if (cookieDomain != null && !cookieDomain.isBlank()) {
             builder.domain(cookieDomain);
         }
 
-        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
+        response.setHeader(
+                HttpHeaders.SET_COOKIE,
+                builder.build().toString()
+        );
     }
 
+    // ---------- CLEAR ----------
+
     public void clearRefreshCookie(HttpServletResponse response) {
-        log.debug("Clearing refresh cookie. name={}", refreshTokenCookieName);
 
         ResponseCookie.ResponseCookieBuilder builder =
                 ResponseCookie.from(refreshTokenCookieName, "")
-                        .maxAge(0)
                         .httpOnly(cookieHttpOnly)
                         .secure(cookieSecure)
                         .path("/")
+                        .maxAge(0)
                         .sameSite(cookieSameSite);
 
         if (cookieDomain != null && !cookieDomain.isBlank()) {
             builder.domain(cookieDomain);
         }
 
-        response.addHeader(HttpHeaders.SET_COOKIE, builder.build().toString());
+        response.setHeader(
+                HttpHeaders.SET_COOKIE,
+                builder.build().toString()
+        );
     }
 
     public void addNoStoreHeader(HttpServletResponse response) {
-        response.addHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-        response.addHeader(HttpHeaders.PRAGMA, "no-cache");
+        response.setHeader(
+                HttpHeaders.CACHE_CONTROL,
+                "no-store, no-cache, must-revalidate, max-age=0"
+        );
+        response.setHeader(HttpHeaders.PRAGMA, "no-cache");
     }
 }

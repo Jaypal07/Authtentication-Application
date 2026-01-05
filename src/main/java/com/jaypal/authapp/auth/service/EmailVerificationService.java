@@ -2,6 +2,8 @@ package com.jaypal.authapp.auth.service;
 
 import com.jaypal.authapp.auth.repositoty.EmailVerificationTokenRepository;
 import com.jaypal.authapp.config.FrontendProperties;
+import com.jaypal.authapp.exception.email.EmailAlreadyVerifiedException;
+import com.jaypal.authapp.exception.email.EmailNotRegisteredException;
 import com.jaypal.authapp.exception.email.VerificationException;
 import com.jaypal.authapp.auth.infrastructure.email.EmailService;
 import com.jaypal.authapp.user.model.User;
@@ -24,33 +26,52 @@ public class EmailVerificationService {
 
     @Transactional
     public void createVerificationToken(User user) {
+
         VerificationToken token = tokenRepository.findByUser(user)
                 .orElseGet(() -> new VerificationToken(user));
 
         token.regenerate();
         tokenRepository.save(token);
 
-        String verifyLink = frontendProperties.getBaseUrl()
-                + "/email-verify?token=" + token.getToken();
+        String verifyLink =
+                frontendProperties.getBaseUrl()
+                        + "/email-verify?token=" + token.getToken();
 
         emailService.sendVerificationEmail(user.getEmail(), verifyLink);
     }
 
+    /**
+     * SECURITY CONTRACT
+     *
+     * - If email is NOT registered -> silently succeed (throw internal exception)
+     * - If email is already verified -> silently succeed (throw internal exception)
+     * - If email is valid and unverified -> resend token
+     *
+     * Controller MUST swallow EmailNotRegisteredException
+     * and EmailAlreadyVerifiedException.
+     */
     @Transactional
     public void resendVerificationToken(String email) {
-        userRepository.findByEmail(email).ifPresent(user -> {
-            if (!user.isEnabled()) {
-                createVerificationToken(user);
-            }
-        });
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(EmailNotRegisteredException::new);
+
+        if (user.isEnabled()) {
+            throw new EmailAlreadyVerifiedException();
+        }
+
+        createVerificationToken(user);
     }
 
     // ---------------- VERIFY ----------------
 
     @Transactional
     public void verifyEmail(String tokenValue) {
+
         VerificationToken token = tokenRepository.findByToken(tokenValue)
-                .orElseThrow(() -> new VerificationException("Invalid verification token"));
+                .orElseThrow(() ->
+                        new VerificationException("Invalid verification token")
+                );
 
         if (token.isExpired()) {
             tokenRepository.delete(token);

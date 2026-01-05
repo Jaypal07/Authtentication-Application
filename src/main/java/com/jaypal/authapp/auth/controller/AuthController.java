@@ -2,6 +2,7 @@ package com.jaypal.authapp.auth.controller;
 
 import com.jaypal.authapp.audit.annotation.AuthAudit;
 import com.jaypal.authapp.audit.model.AuthAuditEvent;
+import com.jaypal.authapp.audit.model.AuditSubjectType;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.dto.LoginRequest;
 import com.jaypal.authapp.auth.dto.ResetPasswordRequest;
@@ -9,6 +10,7 @@ import com.jaypal.authapp.auth.dto.TokenResponse;
 import com.jaypal.authapp.auth.service.AuthService;
 import com.jaypal.authapp.auth.web.WebAuthFacade;
 import com.jaypal.authapp.dto.ForgotPasswordRequest;
+import com.jaypal.authapp.dto.ResendVerificationRequest;
 import com.jaypal.authapp.dto.UserCreateRequest;
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
@@ -36,7 +38,10 @@ public class AuthController {
 
     // ---------- REGISTRATION ----------
 
-    @AuthAudit(event = AuthAuditEvent.REGISTER)
+    @AuthAudit(
+            event = AuthAuditEvent.REGISTER,
+            subject = AuditSubjectType.EMAIL
+    )
     @PostMapping("/register")
     public ResponseEntity<String> register(
             @RequestBody @Valid UserCreateRequest request
@@ -56,18 +61,25 @@ public class AuthController {
         return ResponseEntity.ok("Email verified successfully.");
     }
 
-    @AuthAudit(event = AuthAuditEvent.EMAIL_VERIFY)
+    @AuthAudit(
+            event = AuthAuditEvent.EMAIL_VERIFICATION_RESEND,
+            subject = AuditSubjectType.EMAIL
+    )
     @PostMapping("/resend-verification")
     public ResponseEntity<Void> resendVerification(
-            @RequestParam String email
+            @RequestBody ResendVerificationRequest request
     ) {
-        authService.resendVerification(email);
+        authService.resendVerification(request.email());
         return ResponseEntity.noContent().build();
     }
 
+
     // ---------- LOGIN ----------
 
-    @AuthAudit(event = AuthAuditEvent.LOGIN_SUCCESS)
+    @AuthAudit(
+            event = AuthAuditEvent.LOGIN_SUCCESS,
+            subject = AuditSubjectType.USER_ID
+    )
     @PostMapping("/login")
     public ResponseEntity<TokenResponse> login(
             @RequestBody LoginRequest request,
@@ -103,7 +115,10 @@ public class AuthController {
 
     // ---------- TOKEN ----------
 
-    @AuthAudit(event = AuthAuditEvent.TOKEN_REFRESH)
+    @AuthAudit(
+            event = AuthAuditEvent.TOKEN_REFRESH,
+            subject = AuditSubjectType.USER_ID
+    )
     @PostMapping("/refresh")
     public ResponseEntity<TokenResponse> refresh(
             HttpServletRequest request,
@@ -129,13 +144,15 @@ public class AuthController {
             HttpServletResponse response
     ) {
         webAuthFacade.logout(request, response);
-        SecurityContextHolder.clearContext();
         return ResponseEntity.noContent().build();
     }
 
     // ---------- PASSWORD ----------
 
-    @AuthAudit(event = AuthAuditEvent.FORGOT_PASSWORD_REQUEST)
+    @AuthAudit(
+            event = AuthAuditEvent.FORGOT_PASSWORD_REQUEST,
+            subject = AuditSubjectType.EMAIL
+    )
     @PostMapping("/forgot-password")
     public ResponseEntity<Void> forgotPassword(
             @RequestBody ForgotPasswordRequest request
@@ -144,7 +161,10 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
-    @AuthAudit(event = AuthAuditEvent.PASSWORD_RESET_SUCCESS)
+    @AuthAudit(
+            event = AuthAuditEvent.PASSWORD_RESET_SUCCESS,
+            subject = AuditSubjectType.EMAIL
+    )
     @PostMapping("/reset-password")
     public ResponseEntity<String> resetPassword(
             @RequestBody ResetPasswordRequest request

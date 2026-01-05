@@ -11,6 +11,7 @@ import java.util.UUID;
         name = "auth_audit_logs",
         indexes = {
                 @Index(name = "idx_audit_user_id", columnList = "userId"),
+                @Index(name = "idx_audit_subject", columnList = "subject"),
                 @Index(name = "idx_audit_event", columnList = "eventType"),
                 @Index(name = "idx_audit_reason", columnList = "failureReason"),
                 @Index(name = "idx_audit_created_at", columnList = "createdAt")
@@ -29,8 +30,10 @@ public class AuthAuditLog {
 
     private UUID userId;
 
-    @Column(nullable = false)
+    private String subject;
+
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private AuthAuditEvent eventType;
 
     private String provider;

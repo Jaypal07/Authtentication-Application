@@ -10,6 +10,7 @@ public enum AuthAuditEvent {
     // ---------- REGISTRATION ----------
     REGISTER,
     EMAIL_VERIFY,
+    EMAIL_VERIFICATION_RESEND,
 
     // ---------- OAUTH ----------
     OAUTH_LOGIN_SUCCESS,

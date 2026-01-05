@@ -1,17 +1,12 @@
 package com.jaypal.authapp.dto;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
+import com.jaypal.authapp.audit.model.HasEmail;
 
-public record UserCreateRequest(
+public record UserCreateRequest(String email, String password, String name)
+        implements HasEmail {
 
-        @Email
-        @NotBlank
-        String email,
-
-        @NotBlank
-        String password,
-
-        @NotBlank
-        String name
-) {}
+        @Override
+        public String getEmail() {
+                return email;
+        }
+}

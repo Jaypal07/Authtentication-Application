@@ -5,18 +5,19 @@ import com.jaypal.authapp.audit.model.*;
 import com.jaypal.authapp.audit.service.AuthAuditService;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.dto.TokenResponse;
+import com.jaypal.authapp.exception.email.EmailAlreadyVerifiedException;
+import com.jaypal.authapp.exception.email.EmailNotRegisteredException;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.*;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -29,22 +30,26 @@ public class AuthAuditAspect {
     private final AuthAuditService auditService;
     private final HttpServletRequest request;
 
-    // ---------- SUCCESS ----------
-
     @AfterReturning(
             pointcut = "@annotation(authAudit)",
-            returning = "result",
-            argNames = "authAudit,result"
+            returning = "result"
     )
-    public void auditSuccess(AuthAudit authAudit, Object result) {
+    public void auditSuccess(
+            JoinPoint jp,
+            AuthAudit authAudit,
+            Object result
+    ) {
 
         UUID userId = extractUserIdFromContext();
         if (userId == null) {
             userId = extractUserId(result);
         }
 
+        String subject = extractSubject(authAudit, jp.getArgs());
+
         auditService.log(
                 userId,
+                subject,
                 authAudit.event(),
                 authAudit.provider(),
                 request,
@@ -53,31 +58,29 @@ public class AuthAuditAspect {
         );
     }
 
-    // ---------- FAILURE ----------
-
     @AfterThrowing(
             pointcut = "@annotation(authAudit)",
-            throwing = "ex",
-            argNames = "authAudit,ex"
+            throwing = "ex"
     )
-    public void auditFailure(AuthAudit authAudit, Throwable ex) {
+    public void auditFailure(
+            JoinPoint jp,
+            AuthAudit authAudit,
+            Throwable ex
+    ) {
 
-        AuthAuditEvent failureEvent = mapFailureEvent(authAudit.event());
-        AuthFailureReason reason = resolveFailureReason(failureEvent, ex);
-        UUID userId = extractUserIdFromContext();
+        AuthAuditEvent event = mapFailureEvent(authAudit.event());
+        AuthFailureReason reason = resolveFailureReason(event, ex);
 
         auditService.log(
-                userId,
-                failureEvent,
+                extractUserIdFromContext(),
+                extractSubject(authAudit, jp.getArgs()),
+                event,
                 authAudit.provider(),
                 request,
                 false,
                 reason
         );
     }
-
-
-    // ---------- EVENT MAPPING ----------
 
     private AuthAuditEvent mapFailureEvent(AuthAuditEvent successEvent) {
         return switch (successEvent) {
@@ -88,22 +91,16 @@ public class AuthAuditAspect {
         };
     }
 
-    // ---------- FAILURE REASONS ----------
-
     private AuthFailureReason resolveFailureReason(
             AuthAuditEvent event,
             Throwable ex
     ) {
 
-        // LOGIN
         if (event == AuthAuditEvent.LOGIN_FAILURE
                 || event == AuthAuditEvent.OAUTH_LOGIN_FAILURE) {
 
             if (ex instanceof BadCredentialsException) {
                 return AuthFailureReason.INVALID_CREDENTIALS;
-            }
-            if (ex instanceof UsernameNotFoundException) {
-                return AuthFailureReason.USER_NOT_FOUND;
             }
             if (ex instanceof DisabledException) {
                 return AuthFailureReason.ACCOUNT_DISABLED;
@@ -113,7 +110,6 @@ public class AuthAuditAspect {
             }
         }
 
-        // TOKEN
         if (event == AuthAuditEvent.TOKEN_REFRESH
                 || event == AuthAuditEvent.TOKEN_ROTATION) {
 
@@ -125,9 +121,7 @@ public class AuthAuditAspect {
             }
         }
 
-        // PASSWORD
-        if (event == AuthAuditEvent.PASSWORD_RESET_FAILURE
-                || event == AuthAuditEvent.PASSWORD_CHANGE) {
+        if (event == AuthAuditEvent.PASSWORD_RESET_FAILURE) {
 
             if (ex instanceof ExpiredJwtException) {
                 return AuthFailureReason.RESET_TOKEN_EXPIRED;
@@ -136,22 +130,29 @@ public class AuthAuditAspect {
                 return AuthFailureReason.RESET_TOKEN_INVALID;
             }
         }
+        if (event == AuthAuditEvent.EMAIL_VERIFICATION_RESEND) {
 
-        // REGISTER
-        if (event == AuthAuditEvent.REGISTER) {
-
-            if (ex instanceof DataIntegrityViolationException) {
-                return AuthFailureReason.EMAIL_ALREADY_EXISTS;
+            if (ex instanceof EmailNotRegisteredException) {
+                return AuthFailureReason.EMAIL_NOT_REGISTERED;
             }
-            if (ex instanceof IllegalArgumentException) {
-                return AuthFailureReason.VALIDATION_FAILED;
+            if (ex instanceof EmailAlreadyVerifiedException) {
+                return AuthFailureReason.EMAIL_ALREADY_VERIFIED;
             }
         }
 
         return AuthFailureReason.SYSTEM_ERROR;
     }
 
-    // ---------- USER ID ----------
+    private String extractSubject(AuthAudit authAudit, Object[] args) {
+        if (authAudit.subject() == AuditSubjectType.EMAIL) {
+            for (Object arg : args) {
+                if (arg instanceof HasEmail e) {
+                    return e.getEmail();
+                }
+            }
+        }
+        return null;
+    }
 
     private UUID extractUserId(Object result) {
 

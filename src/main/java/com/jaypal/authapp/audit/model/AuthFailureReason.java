@@ -17,6 +17,7 @@ public enum AuthFailureReason {
     // ---------- REGISTRATION ----------
     EMAIL_ALREADY_EXISTS,
     EMAIL_ALREADY_VERIFIED,
+    EMAIL_NOT_REGISTERED,
     VALIDATION_FAILED,
 
     // ---------- PASSWORD ----------

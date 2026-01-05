@@ -2,7 +2,7 @@ package com.jaypal.authapp.dto;
 
 import com.jaypal.authapp.audit.model.HasEmail;
 
-public record ForgotPasswordRequest(String email)
+public record ResendVerificationRequest(String email)
         implements HasEmail {
 
     @Override

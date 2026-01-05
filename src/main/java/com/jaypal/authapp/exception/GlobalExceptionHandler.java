@@ -1,6 +1,7 @@
 package com.jaypal.authapp.exception;
 
-import com.jaypal.authapp.exception.email.AlreadyVerifiedException;
+import com.jaypal.authapp.exception.email.EmailAlreadyVerifiedException;
+import com.jaypal.authapp.exception.email.EmailNotRegisteredException;
 import com.jaypal.authapp.exception.email.VerificationException;
 import com.jaypal.authapp.exception.refresh.RefreshTokenException;
 import lombok.extern.slf4j.Slf4j;
@@ -175,9 +176,9 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(AlreadyVerifiedException.class)
+    @ExceptionHandler(EmailAlreadyVerifiedException.class)
     public ResponseEntity<Map<String, Object>> handleAlreadyVerified(
-            AlreadyVerifiedException ex,
+            EmailAlreadyVerifiedException ex,
             WebRequest request
     ) {
         return problem(
@@ -189,6 +190,12 @@ public class GlobalExceptionHandler {
                 ex,
                 false
         );
+    }
+    @ExceptionHandler({
+            EmailNotRegisteredException.class,
+    })
+    public ResponseEntity<Void> swallowVerificationExceptions() {
+        return ResponseEntity.noContent().build();
     }
 
     @ExceptionHandler(RefreshTokenException.class)

@@ -19,6 +19,7 @@ public class AuthAuditService {
 
     public void log(
             UUID userId,
+            String subject,
             AuthAuditEvent event,
             String provider,
             HttpServletRequest request,
@@ -28,22 +29,21 @@ public class AuthAuditService {
         try {
 
             if (!success && !AuthAuditMatrix.isAllowed(event, failureReason)) {
-                log.warn(
-                        "Invalid audit combination. event={}, reason={}",
-                        event, failureReason
-                );
                 failureReason = AuthFailureReason.SYSTEM_ERROR;
             }
 
             repository.save(
                     AuthAuditLog.builder()
                             .userId(userId)
+                            .subject(subject)
                             .eventType(event)
                             .provider(provider)
                             .success(success)
                             .failureReason(success ? null : failureReason)
                             .ipAddress(extractIp(request))
-                            .userAgent(request.getHeader("User-Agent"))
+                            .userAgent(request != null
+                                    ? request.getHeader("User-Agent")
+                                    : null)
                             .build()
             );
 
@@ -56,6 +56,9 @@ public class AuthAuditService {
     }
 
     private String extractIp(HttpServletRequest request) {
+        if (request == null) {
+            return null;
+        }
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
             return forwarded.split(",")[0].trim();

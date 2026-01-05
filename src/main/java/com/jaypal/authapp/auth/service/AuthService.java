@@ -1,5 +1,6 @@
 package com.jaypal.authapp.auth.service;
 
+import com.jaypal.authapp.audit.context.AuditContext;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.event.UserRegisteredEvent;
 import com.jaypal.authapp.auth.model.PasswordResetToken;
@@ -210,6 +211,8 @@ public class AuthService {
 
         userRepository.save(user);
         passwordResetTokenRepository.save(token);
+        // ✅ audit enrichment
+        com.jaypal.authapp.audit.context.AuditContext.setEmail(user.getEmail());
     }
 
     // ---------- INTERNAL ----------

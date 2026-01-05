@@ -1,6 +1,7 @@
 package com.jaypal.authapp.audit.aspect;
 
 import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.context.AuditContext;
 import com.jaypal.authapp.audit.model.*;
 import com.jaypal.authapp.audit.service.AuthAuditService;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
@@ -14,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.*;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.*;
 import org.springframework.security.core.Authentication;
@@ -30,6 +32,8 @@ public class AuthAuditAspect {
     private final AuthAuditService auditService;
     private final HttpServletRequest request;
 
+    // ---------- SUCCESS ----------
+
     @AfterReturning(
             pointcut = "@annotation(authAudit)",
             returning = "result"
@@ -39,24 +43,30 @@ public class AuthAuditAspect {
             AuthAudit authAudit,
             Object result
     ) {
+        try {
+            UUID userId = AuditContext.getUserId();
+            if (userId == null) {
+                userId = extractUserIdFromContext();
+            }
+            if (userId == null) {
+                userId = extractUserId(result);
+            }
 
-        UUID userId = extractUserIdFromContext();
-        if (userId == null) {
-            userId = extractUserId(result);
+            auditService.log(
+                    userId,
+                    extractSubject(authAudit, jp.getArgs()),
+                    authAudit.event(),
+                    authAudit.provider(),
+                    request,
+                    true,
+                    null
+            );
+        } finally {
+            AuditContext.clear();
         }
-
-        String subject = extractSubject(authAudit, jp.getArgs());
-
-        auditService.log(
-                userId,
-                subject,
-                authAudit.event(),
-                authAudit.provider(),
-                request,
-                true,
-                null
-        );
     }
+
+    // ---------- FAILURE ----------
 
     @AfterThrowing(
             pointcut = "@annotation(authAudit)",
@@ -67,20 +77,50 @@ public class AuthAuditAspect {
             AuthAudit authAudit,
             Throwable ex
     ) {
+        try {
+            AuthAuditEvent event = mapFailureEvent(authAudit.event());
+            AuthFailureReason reason = resolveFailureReason(event, ex);
 
-        AuthAuditEvent event = mapFailureEvent(authAudit.event());
-        AuthFailureReason reason = resolveFailureReason(event, ex);
-
-        auditService.log(
-                extractUserIdFromContext(),
-                extractSubject(authAudit, jp.getArgs()),
-                event,
-                authAudit.provider(),
-                request,
-                false,
-                reason
-        );
+            auditService.log(
+                    extractUserIdFromContext(),
+                    extractSubject(authAudit, jp.getArgs()),
+                    event,
+                    authAudit.provider(),
+                    request,
+                    false,
+                    reason
+            );
+        } finally {
+            AuditContext.clear();
+        }
     }
+
+    // ---------- SUBJECT ----------
+
+    private String extractSubject(AuthAudit authAudit, Object[] args) {
+
+        // LOGIN FAILURE MUST LOG EMAIL
+        if (authAudit.event() == AuthAuditEvent.LOGIN_SUCCESS) {
+            for (Object arg : args) {
+                if (arg instanceof HasEmail e) {
+                    return e.getEmail();
+                }
+            }
+        }
+
+        if (authAudit.subject() == AuditSubjectType.EMAIL) {
+            for (Object arg : args) {
+                if (arg instanceof HasEmail e) {
+                    return e.getEmail();
+                }
+            }
+            return AuditContext.getEmail();
+        }
+
+        return null;
+    }
+
+    // ---------- EVENT MAPPING ----------
 
     private AuthAuditEvent mapFailureEvent(AuthAuditEvent successEvent) {
         return switch (successEvent) {
@@ -91,11 +131,14 @@ public class AuthAuditAspect {
         };
     }
 
+    // ---------- FAILURE REASONS ----------
+
     private AuthFailureReason resolveFailureReason(
             AuthAuditEvent event,
             Throwable ex
     ) {
 
+        // LOGIN
         if (event == AuthAuditEvent.LOGIN_FAILURE
                 || event == AuthAuditEvent.OAUTH_LOGIN_FAILURE) {
 
@@ -110,6 +153,32 @@ public class AuthAuditAspect {
             }
         }
 
+        // REGISTER
+        if (event == AuthAuditEvent.REGISTER) {
+
+            if (ex instanceof DataIntegrityViolationException) {
+                return AuthFailureReason.EMAIL_ALREADY_EXISTS;
+            }
+            if (ex instanceof IllegalArgumentException) {
+                return AuthFailureReason.VALIDATION_FAILED;
+            }
+        }
+
+        // EMAIL VERIFY
+        if (event == AuthAuditEvent.EMAIL_VERIFY) {
+
+            if (ex instanceof ExpiredJwtException) {
+                return AuthFailureReason.TOKEN_EXPIRED;
+            }
+            if (ex instanceof JwtException || ex instanceof IllegalArgumentException) {
+                return AuthFailureReason.TOKEN_INVALID;
+            }
+            if (ex instanceof EmailAlreadyVerifiedException) {
+                return AuthFailureReason.EMAIL_ALREADY_VERIFIED;
+            }
+        }
+
+        // TOKEN
         if (event == AuthAuditEvent.TOKEN_REFRESH
                 || event == AuthAuditEvent.TOKEN_ROTATION) {
 
@@ -121,6 +190,7 @@ public class AuthAuditAspect {
             }
         }
 
+        // PASSWORD RESET
         if (event == AuthAuditEvent.PASSWORD_RESET_FAILURE) {
 
             if (ex instanceof ExpiredJwtException) {
@@ -130,6 +200,19 @@ public class AuthAuditAspect {
                 return AuthFailureReason.RESET_TOKEN_INVALID;
             }
         }
+
+        // PASSWORD CHANGE
+        if (event == AuthAuditEvent.PASSWORD_CHANGE) {
+
+            if (ex instanceof BadCredentialsException) {
+                return AuthFailureReason.INVALID_CREDENTIALS;
+            }
+            if (ex instanceof IllegalArgumentException) {
+                return AuthFailureReason.PASSWORD_POLICY_VIOLATION;
+            }
+        }
+
+        // EMAIL RESEND
         if (event == AuthAuditEvent.EMAIL_VERIFICATION_RESEND) {
 
             if (ex instanceof EmailNotRegisteredException) {
@@ -143,16 +226,7 @@ public class AuthAuditAspect {
         return AuthFailureReason.SYSTEM_ERROR;
     }
 
-    private String extractSubject(AuthAudit authAudit, Object[] args) {
-        if (authAudit.subject() == AuditSubjectType.EMAIL) {
-            for (Object arg : args) {
-                if (arg instanceof HasEmail e) {
-                    return e.getEmail();
-                }
-            }
-        }
-        return null;
-    }
+    // ---------- USER ID ----------
 
     private UUID extractUserId(Object result) {
 

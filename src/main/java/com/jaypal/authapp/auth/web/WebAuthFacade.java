@@ -74,10 +74,15 @@ public class WebAuthFacade {
     ) {
 
         refreshTokenExtractor.extract(request)
-                .ifPresent(authService::logout);
+                .ifPresentOrElse(
+                        token -> {
+                            log.info("LOGOUT: refresh token found");
+                            authService.logout(token);
+                        },
+                        () -> log.warn("LOGOUT: refresh token NOT found")
+                );
 
         cookieService.clearRefreshCookie(response);
         cookieService.addNoStoreHeader(response);
-        SecurityContextHolder.clearContext();
     }
 }

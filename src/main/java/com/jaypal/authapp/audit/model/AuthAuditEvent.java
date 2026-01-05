@@ -22,12 +22,11 @@ public enum AuthAuditEvent {
     TOKEN_REVOKED,
 
     // ---------- PASSWORD ----------
-    PASSWORD_CHANGE,          // user is logged in
-    FORGOT_PASSWORD_REQUEST,  // email sent
-    PASSWORD_RESET_SUCCESS,   // token based reset
+    PASSWORD_CHANGE,
+    FORGOT_PASSWORD_REQUEST,
+    PASSWORD_RESET_SUCCESS,
     PASSWORD_RESET_FAILURE,
 
     // ---------- ACCOUNT ----------
     ACCOUNT_DISABLED
 }
-

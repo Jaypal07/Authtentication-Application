@@ -1,12 +1,14 @@
 package com.jaypal.authapp.auth.controller;
 
 import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.context.AuditContext;
 import com.jaypal.authapp.audit.model.AuthAuditEvent;
 import com.jaypal.authapp.audit.model.AuditSubjectType;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.dto.LoginRequest;
 import com.jaypal.authapp.auth.dto.ResetPasswordRequest;
 import com.jaypal.authapp.auth.dto.TokenResponse;
+import com.jaypal.authapp.auth.infrastructure.RefreshTokenExtractor;
 import com.jaypal.authapp.auth.service.AuthService;
 import com.jaypal.authapp.auth.web.WebAuthFacade;
 import com.jaypal.authapp.dto.ForgotPasswordRequest;
@@ -15,6 +17,8 @@ import com.jaypal.authapp.dto.UserCreateRequest;
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.user.mapper.UserMapper;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -26,6 +30,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -35,6 +41,7 @@ public class AuthController {
     private final WebAuthFacade webAuthFacade;
     private final AuthService authService;
     private final JwtService jwtService;
+    private final RefreshTokenExtractor refreshTokenExtractor;
 
     // ---------- REGISTRATION ----------
 
@@ -143,9 +150,31 @@ public class AuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
+
+        refreshTokenExtractor.extract(request)
+                .ifPresent(token -> {
+                    try {
+                        Jws<Claims> parsed = jwtService.parse(token);
+
+                        if (!jwtService.isRefreshToken(parsed)) {
+                            return;
+                        }
+
+                        UUID userId =
+                                UUID.fromString(
+                                        parsed.getBody().getSubject()
+                                );
+
+                        AuditContext.setUserId(userId);
+                    } catch (Exception ex) {
+                        // intentionally swallowed
+                    }
+                });
+
         webAuthFacade.logout(request, response);
         return ResponseEntity.noContent().build();
     }
+
 
     // ---------- PASSWORD ----------
 

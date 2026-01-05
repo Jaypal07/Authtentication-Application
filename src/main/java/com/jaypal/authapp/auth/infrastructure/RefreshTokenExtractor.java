@@ -7,8 +7,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -20,36 +18,36 @@ public class RefreshTokenExtractor {
 
     public Optional<String> extract(HttpServletRequest request) {
 
-        // 1️⃣ Explicit refresh header wins
-        String headerToken = request.getHeader("X-Refresh-Token");
-        if (headerToken != null && !headerToken.isBlank()) {
-            return Optional.of(headerToken.trim());
-        }
-
-        // 2️⃣ Authorization bearer fallback
-        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (authHeader != null &&
-                authHeader.toLowerCase().startsWith("bearer ")) {
-            return Optional.of(authHeader.substring(7).trim());
-        }
-
-        // 3️⃣ Cookie last
-        if (request.getCookies() != null) {
-            return Arrays.stream(request.getCookies())
-                    .filter(c ->
-                            cookieService
-                                    .getRefreshTokenCookieName()
-                                    .equals(c.getName())
-                    )
-                    .map(Cookie::getValue)
-                    .map(v ->
-                            URLDecoder.decode(
-                                    v,
-                                    StandardCharsets.UTF_8
+        // 1️⃣ Cookie is the primary source (browser-safe, CSRF-aware)
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            Optional<String> fromCookie =
+                    Arrays.stream(cookies)
+                            .filter(c ->
+                                    cookieService
+                                            .getRefreshTokenCookieName()
+                                            .equals(c.getName())
                             )
-                    )
-                    .filter(v -> !v.isBlank())
-                    .findFirst();
+                            .map(Cookie::getValue)
+                            .filter(v -> v != null && !v.isBlank())
+                            .findFirst();
+
+            if (fromCookie.isPresent()) {
+                return fromCookie;
+            }
+        }
+
+        // 2️⃣ Explicit refresh token header (non-browser clients)
+        String refreshHeader = request.getHeader("X-Refresh-Token");
+        if (refreshHeader != null && !refreshHeader.isBlank()) {
+            return Optional.of(refreshHeader.trim());
+        }
+
+        // 3️⃣ Authorization header LAST and OPTIONAL
+        // Only for controlled internal clients
+        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return Optional.of(authHeader.substring(7).trim());
         }
 
         return Optional.empty();

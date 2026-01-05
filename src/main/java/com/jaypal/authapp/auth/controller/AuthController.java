@@ -1,5 +1,7 @@
 package com.jaypal.authapp.auth.controller;
 
+import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.model.AuthAuditEvent;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.dto.LoginRequest;
 import com.jaypal.authapp.auth.dto.ResetPasswordRequest;
@@ -32,6 +34,9 @@ public class AuthController {
     private final AuthService authService;
     private final JwtService jwtService;
 
+    // ---------- REGISTRATION ----------
+
+    @AuthAudit(event = AuthAuditEvent.REGISTER)
     @PostMapping("/register")
     public ResponseEntity<String> register(
             @RequestBody @Valid UserCreateRequest request
@@ -42,6 +47,7 @@ public class AuthController {
                 .body("Registration successful. Please verify your email.");
     }
 
+    @AuthAudit(event = AuthAuditEvent.EMAIL_VERIFY)
     @GetMapping("/email-verify")
     public ResponseEntity<String> verifyEmail(
             @RequestParam String token
@@ -50,6 +56,7 @@ public class AuthController {
         return ResponseEntity.ok("Email verified successfully.");
     }
 
+    @AuthAudit(event = AuthAuditEvent.EMAIL_VERIFY)
     @PostMapping("/resend-verification")
     public ResponseEntity<Void> resendVerification(
             @RequestParam String email
@@ -58,6 +65,9 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    // ---------- LOGIN ----------
+
+    @AuthAudit(event = AuthAuditEvent.LOGIN_SUCCESS)
     @PostMapping("/login")
     public ResponseEntity<TokenResponse> login(
             @RequestBody LoginRequest request,
@@ -91,6 +101,9 @@ public class AuthController {
         );
     }
 
+    // ---------- TOKEN ----------
+
+    @AuthAudit(event = AuthAuditEvent.TOKEN_REFRESH)
     @PostMapping("/refresh")
     public ResponseEntity<TokenResponse> refresh(
             HttpServletRequest request,
@@ -109,6 +122,7 @@ public class AuthController {
         );
     }
 
+    @AuthAudit(event = AuthAuditEvent.LOGOUT)
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
             HttpServletRequest request,
@@ -119,6 +133,9 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    // ---------- PASSWORD ----------
+
+    @AuthAudit(event = AuthAuditEvent.FORGOT_PASSWORD_REQUEST)
     @PostMapping("/forgot-password")
     public ResponseEntity<Void> forgotPassword(
             @RequestBody ForgotPasswordRequest request
@@ -127,6 +144,7 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @AuthAudit(event = AuthAuditEvent.PASSWORD_RESET_SUCCESS)
     @PostMapping("/reset-password")
     public ResponseEntity<String> resetPassword(
             @RequestBody ResetPasswordRequest request

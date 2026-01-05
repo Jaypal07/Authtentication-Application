@@ -26,9 +26,12 @@ public class AuthAuditService {
             AuthFailureReason failureReason
     ) {
         try {
+
             if (!success && !AuthAuditMatrix.isAllowed(event, failureReason)) {
-                log.warn("Invalid audit event/failure combination. event={}, reason={}",
-                        event, failureReason);
+                log.warn(
+                        "Invalid audit combination. event={}, reason={}",
+                        event, failureReason
+                );
                 failureReason = AuthFailureReason.SYSTEM_ERROR;
             }
 
@@ -45,7 +48,10 @@ public class AuthAuditService {
             );
 
         } catch (Exception ex) {
-            log.error("Audit logging failed. event={}, success={}", event, success, ex);
+            log.error(
+                    "Audit logging failed. event={}, success={}",
+                    event, success, ex
+            );
         }
     }
 

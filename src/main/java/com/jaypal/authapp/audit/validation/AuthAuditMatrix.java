@@ -14,7 +14,8 @@ public final class AuthAuditMatrix {
             new EnumMap<>(AuthAuditEvent.class);
 
     static {
-        // LOGIN
+
+        // ---------- LOGIN ----------
         MATRIX.put(
                 AuthAuditEvent.LOGIN_FAILURE,
                 EnumSet.of(
@@ -25,7 +26,7 @@ public final class AuthAuditMatrix {
                 )
         );
 
-        // OAUTH
+        // ---------- OAUTH ----------
         MATRIX.put(
                 AuthAuditEvent.OAUTH_LOGIN_FAILURE,
                 EnumSet.of(
@@ -34,7 +35,16 @@ public final class AuthAuditMatrix {
                 )
         );
 
-        // TOKEN
+        // ---------- TOKEN ----------
+        MATRIX.put(
+                AuthAuditEvent.TOKEN_REFRESH,
+                EnumSet.of(
+                        AuthFailureReason.TOKEN_INVALID,
+                        AuthFailureReason.TOKEN_EXPIRED,
+                        AuthFailureReason.TOKEN_REVOKED
+                )
+        );
+
         MATRIX.put(
                 AuthAuditEvent.TOKEN_ROTATION,
                 EnumSet.of(
@@ -44,12 +54,53 @@ public final class AuthAuditMatrix {
                 )
         );
 
-        // REGISTER
+        MATRIX.put(
+                AuthAuditEvent.TOKEN_REVOKED,
+                EnumSet.of(
+                        AuthFailureReason.TOKEN_INVALID
+                )
+        );
+
+        // ---------- REGISTRATION ----------
         MATRIX.put(
                 AuthAuditEvent.REGISTER,
                 EnumSet.of(
                         AuthFailureReason.EMAIL_ALREADY_EXISTS,
                         AuthFailureReason.VALIDATION_FAILED
+                )
+        );
+
+        MATRIX.put(
+                AuthAuditEvent.EMAIL_VERIFY,
+                EnumSet.of(
+                        AuthFailureReason.EMAIL_ALREADY_VERIFIED,
+                        AuthFailureReason.VALIDATION_FAILED
+                )
+        );
+
+        // ---------- PASSWORD ----------
+        MATRIX.put(
+                AuthAuditEvent.PASSWORD_RESET_FAILURE,
+                EnumSet.of(
+                        AuthFailureReason.RESET_TOKEN_INVALID,
+                        AuthFailureReason.RESET_TOKEN_EXPIRED,
+                        AuthFailureReason.PASSWORD_POLICY_VIOLATION
+                )
+        );
+
+        MATRIX.put(
+                AuthAuditEvent.PASSWORD_CHANGE,
+                EnumSet.of(
+                        AuthFailureReason.INVALID_CREDENTIALS,
+                        AuthFailureReason.PASSWORD_POLICY_VIOLATION
+                )
+        );
+
+        // ---------- ACCOUNT ----------
+        MATRIX.put(
+                AuthAuditEvent.ACCOUNT_DISABLED,
+                EnumSet.of(
+                        AuthFailureReason.ACCOUNT_DISABLED
                 )
         );
     }
@@ -69,6 +120,13 @@ public final class AuthAuditMatrix {
         }
 
         Set<AuthFailureReason> allowed = MATRIX.get(event);
-        return allowed != null && allowed.contains(reason);
+
+        if (allowed == null) {
+            throw new IllegalStateException(
+                    "AuthAuditMatrix missing configuration for event: " + event
+            );
+        }
+
+        return allowed.contains(reason);
     }
 }

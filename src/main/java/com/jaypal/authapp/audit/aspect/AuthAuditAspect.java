@@ -33,13 +33,14 @@ public class AuthAuditAspect {
 
     @AfterReturning(
             pointcut = "@annotation(authAudit)",
-            returning = "result"
+            returning = "result",
+            argNames = "authAudit,result"
     )
     public void auditSuccess(AuthAudit authAudit, Object result) {
 
-        UUID userId = extractUserId(result);
+        UUID userId = extractUserIdFromContext();
         if (userId == null) {
-            userId = extractUserIdFromContext();
+            userId = extractUserId(result);
         }
 
         auditService.log(
@@ -56,24 +57,18 @@ public class AuthAuditAspect {
 
     @AfterThrowing(
             pointcut = "@annotation(authAudit)",
-            throwing = "ex"
+            throwing = "ex",
+            argNames = "authAudit,ex"
     )
     public void auditFailure(AuthAudit authAudit, Throwable ex) {
 
-        AuthAuditEvent event =
-                switch (authAudit.event()) {
-                    case LOGIN_SUCCESS -> AuthAuditEvent.LOGIN_FAILURE;
-                    case OAUTH_LOGIN_SUCCESS -> AuthAuditEvent.OAUTH_LOGIN_FAILURE;
-                    default -> authAudit.event();
-                };
-
-        AuthFailureReason reason = resolveFailureReason(event, ex);
-
+        AuthAuditEvent failureEvent = mapFailureEvent(authAudit.event());
+        AuthFailureReason reason = resolveFailureReason(failureEvent, ex);
         UUID userId = extractUserIdFromContext();
 
         auditService.log(
                 userId,
-                event,
+                failureEvent,
                 authAudit.provider(),
                 request,
                 false,
@@ -82,14 +77,25 @@ public class AuthAuditAspect {
     }
 
 
-    // ---------- REASON RESOLUTION ----------
+    // ---------- EVENT MAPPING ----------
+
+    private AuthAuditEvent mapFailureEvent(AuthAuditEvent successEvent) {
+        return switch (successEvent) {
+            case LOGIN_SUCCESS -> AuthAuditEvent.LOGIN_FAILURE;
+            case OAUTH_LOGIN_SUCCESS -> AuthAuditEvent.OAUTH_LOGIN_FAILURE;
+            case PASSWORD_RESET_SUCCESS -> AuthAuditEvent.PASSWORD_RESET_FAILURE;
+            default -> successEvent;
+        };
+    }
+
+    // ---------- FAILURE REASONS ----------
 
     private AuthFailureReason resolveFailureReason(
             AuthAuditEvent event,
             Throwable ex
     ) {
 
-        // ---------- LOGIN ----------
+        // LOGIN
         if (event == AuthAuditEvent.LOGIN_FAILURE
                 || event == AuthAuditEvent.OAUTH_LOGIN_FAILURE) {
 
@@ -107,22 +113,31 @@ public class AuthAuditAspect {
             }
         }
 
-        // ---------- TOKEN ----------
-        if (event == AuthAuditEvent.TOKEN_ROTATION
-                || event == AuthAuditEvent.TOKEN_REFRESH) {
+        // TOKEN
+        if (event == AuthAuditEvent.TOKEN_REFRESH
+                || event == AuthAuditEvent.TOKEN_ROTATION) {
 
             if (ex instanceof ExpiredJwtException) {
                 return AuthFailureReason.TOKEN_EXPIRED;
             }
-            if (ex instanceof JwtException) {
-                return AuthFailureReason.TOKEN_INVALID;
-            }
-            if (ex instanceof IllegalArgumentException) {
+            if (ex instanceof JwtException || ex instanceof IllegalArgumentException) {
                 return AuthFailureReason.TOKEN_INVALID;
             }
         }
 
-        // ---------- REGISTER ----------
+        // PASSWORD
+        if (event == AuthAuditEvent.PASSWORD_RESET_FAILURE
+                || event == AuthAuditEvent.PASSWORD_CHANGE) {
+
+            if (ex instanceof ExpiredJwtException) {
+                return AuthFailureReason.RESET_TOKEN_EXPIRED;
+            }
+            if (ex instanceof JwtException || ex instanceof IllegalArgumentException) {
+                return AuthFailureReason.RESET_TOKEN_INVALID;
+            }
+        }
+
+        // REGISTER
         if (event == AuthAuditEvent.REGISTER) {
 
             if (ex instanceof DataIntegrityViolationException) {
@@ -136,8 +151,7 @@ public class AuthAuditAspect {
         return AuthFailureReason.SYSTEM_ERROR;
     }
 
-
-    // ---------- HELPERS ----------
+    // ---------- USER ID ----------
 
     private UUID extractUserId(Object result) {
 

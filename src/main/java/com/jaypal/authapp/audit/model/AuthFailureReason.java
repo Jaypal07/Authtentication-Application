@@ -16,13 +16,14 @@ public enum AuthFailureReason {
 
     // ---------- REGISTRATION ----------
     EMAIL_ALREADY_EXISTS,
+    EMAIL_ALREADY_VERIFIED,
     VALIDATION_FAILED,
 
     // ---------- PASSWORD ----------
-    PASSWORD_POLICY_VIOLATION,
     RESET_TOKEN_INVALID,
     RESET_TOKEN_EXPIRED,
+    PASSWORD_POLICY_VIOLATION,
 
-    // ---------- FALLBACK ----------
+    // ---------- SYSTEM ----------
     SYSTEM_ERROR
 }

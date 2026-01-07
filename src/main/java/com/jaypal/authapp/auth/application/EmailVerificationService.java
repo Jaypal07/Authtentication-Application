@@ -1,10 +1,10 @@
 package com.jaypal.authapp.auth.application;
 
-import com.jaypal.authapp.auth.repository.EmailVerificationTokenRepository;
-import com.jaypal.authapp.common.exception.email.EmailAlreadyVerifiedException;
-import com.jaypal.authapp.common.exception.email.EmailNotRegisteredException;
-import com.jaypal.authapp.common.exception.email.VerificationTokenExpiredException;
-import com.jaypal.authapp.common.exception.email.VerificationTokenInvalidException;
+import com.jaypal.authapp.user.repository.EmailVerificationTokenRepository;
+import com.jaypal.authapp.auth.exception.EmailAlreadyVerifiedException;
+import com.jaypal.authapp.auth.exception.EmailNotRegisteredException;
+import com.jaypal.authapp.auth.exception.VerificationTokenExpiredException;
+import com.jaypal.authapp.auth.exception.VerificationTokenInvalidException;
 import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.auth.infrastructure.email.EmailService;
 import com.jaypal.authapp.user.model.User;

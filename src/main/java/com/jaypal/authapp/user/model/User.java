@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(
@@ -59,16 +60,16 @@ public class User {
     @Column(nullable = false)
     private Instant updatedAt;
 
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(
-            name = "user_roles",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "role_id")
+    @OneToMany(
+            mappedBy = "user",
+            fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
     )
     @Builder.Default
-    private Set<Role> roles = new HashSet<>();
+    private Set<UserRole> userRoles = new HashSet<>();
 
-    // ---------------- FACTORIES ----------------
+    // ---------- FACTORIES ----------
 
     public static User createLocal(String email, String password, String name) {
         UUID id = UUID.randomUUID();
@@ -110,7 +111,23 @@ public class User {
                 .build();
     }
 
-    // ---------------- DOMAIN ----------------
+    // ---------- DOMAIN ----------
+
+    /**
+     * JWT SAFE.
+     * Returns role names exactly as before.
+     */
+    public Set<String> getRoles() {
+        return userRoles.stream()
+                .map(ur -> ur.getRole().getType().name())
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    public Set<Role> getRoleEntities() {
+        return userRoles.stream()
+                .map(UserRole::getRole)
+                .collect(Collectors.toUnmodifiableSet());
+    }
 
     public void enable() {
         this.enabled = true;
@@ -130,12 +147,6 @@ public class User {
     public void updateProfile(String name, String image) {
         if (name != null) this.name = name;
         if (image != null) this.image = image;
-        this.updatedAt = Instant.now();
-    }
-
-    public void setRoles(Set<Role> roles) {
-        this.roles.clear();
-        this.roles.addAll(roles);
         this.updatedAt = Instant.now();
     }
 }

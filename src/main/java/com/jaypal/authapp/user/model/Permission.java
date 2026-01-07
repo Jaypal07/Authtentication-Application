@@ -7,12 +7,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "roles")
+@Table(name = "permissions")
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Role {
+public class Permission {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -20,13 +20,10 @@ public class Role {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, unique = true, updatable = false)
-    private RoleType type;
+    private PermissionType type;
 
     @Column(nullable = false)
     private String description;
-
-    @Column(nullable = false, updatable = false)
-    private boolean immutable;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

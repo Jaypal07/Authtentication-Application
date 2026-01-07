@@ -5,7 +5,7 @@ import com.jaypal.authapp.audit.context.AuditContext;
 import com.jaypal.authapp.audit.domain.AuthAuditEvent;
 import com.jaypal.authapp.audit.domain.AuthFailureReason;
 import com.jaypal.authapp.audit.resolver.*;
-import com.jaypal.authapp.audit.service.AuthAuditService;
+import com.jaypal.authapp.audit.application.AuthAuditService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.JoinPoint;

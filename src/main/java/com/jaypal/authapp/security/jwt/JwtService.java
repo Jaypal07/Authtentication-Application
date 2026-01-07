@@ -1,6 +1,5 @@
 package com.jaypal.authapp.security.jwt;
 
-import com.jaypal.authapp.user.model.Role;
 import com.jaypal.authapp.user.model.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
@@ -40,12 +39,16 @@ public class JwtService {
         this.issuer = issuer;
     }
 
+    /* =========================
+       TOKEN GENERATION
+       ========================= */
+
     public String generateAccessToken(User user) {
         log.debug("Generating access token. userId={}", user.getId());
 
         Map<String, Object> claims = new HashMap<>();
         claims.put(CLAIM_TYPE, TokenType.ACCESS.name().toLowerCase());
-        claims.put(CLAIM_ROLES, extractRoles(user));
+        claims.put(CLAIM_ROLES, extractRoleNames(user));
 
         if (user.getEmail() != null) {
             claims.put(CLAIM_EMAIL, user.getEmail());
@@ -76,6 +79,10 @@ public class JwtService {
         );
     }
 
+    /* =========================
+       TOKEN PARSING
+       ========================= */
+
     public Jws<Claims> parse(String token) {
         return JwtUtils.parse(secretKey, issuer, token);
     }
@@ -89,6 +96,10 @@ public class JwtService {
         return TokenType.from(parsed.getBody().get(CLAIM_TYPE, String.class))
                 == TokenType.REFRESH;
     }
+
+    /* =========================
+       CLAIM EXTRACTION
+       ========================= */
 
     public UUID extractUserId(Claims claims) {
         return UUID.fromString(claims.getSubject());
@@ -106,17 +117,27 @@ public class JwtService {
             throw new IllegalStateException("Invalid roles claim");
         }
 
-        return list.stream().map(String.class::cast).collect(Collectors.toList());
+        return list.stream()
+                .map(String.class::cast)
+                .collect(Collectors.toUnmodifiableList());
     }
 
-    private List<String> extractRoles(User user) {
-        if (user.getRoles() == null) return List.of();
-        return user.getRoles().stream().map(Role::getName).collect(Collectors.toList());
+    /* =========================
+       INTERNAL HELPERS
+       ========================= */
+
+    private List<String> extractRoleNames(User user) {
+        if (user.getRoles() == null || user.getRoles().isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(user.getRoles());
     }
 
     private void validateSecret(String secret) {
         if (secret == null || secret.length() < 64) {
-            throw new IllegalArgumentException("JWT secret must be at least 64 characters long");
+            throw new IllegalArgumentException(
+                    "JWT secret must be at least 64 characters long"
+            );
         }
     }
 }

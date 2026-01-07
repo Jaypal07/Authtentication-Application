@@ -1,7 +1,9 @@
 package com.jaypal.authapp.user.mapper;
 
+import com.jaypal.authapp.user.dto.PermissionDto;
 import com.jaypal.authapp.user.dto.RoleDto;
 import com.jaypal.authapp.user.dto.UserResponseDto;
+import com.jaypal.authapp.user.model.PermissionType;
 import com.jaypal.authapp.user.model.Role;
 import com.jaypal.authapp.user.model.User;
 
@@ -18,6 +20,13 @@ public final class UserMapper {
        ========================= */
 
     public static UserResponseDto toResponse(User user) {
+        return toResponse(user, Collections.emptySet());
+    }
+
+    public static UserResponseDto toResponse(
+            User user,
+            Set<PermissionType> permissions
+    ) {
         if (user == null) {
             return null;
         }
@@ -30,6 +39,7 @@ public final class UserMapper {
                 user.isEnabled(),
                 user.getProvider(),
                 toRoleDtos(user.getRoleEntities()),
+                toPermissionDtos(permissions),
                 user.getCreatedAt(),
                 user.getUpdatedAt()
         );
@@ -56,15 +66,23 @@ public final class UserMapper {
 
         return new RoleDto(
                 role.getId(),
-                role.getType().name() // IMPORTANT
+                role.getType().name()
         );
     }
 
     /* =========================
-       DTO → DOMAIN
-       =========================
-       ❌ REMOVED ON PURPOSE
-       Roles are NOT mapped from DTOs anymore.
-       Role assignment is done via service.
+       PERMISSION MAPPERS
        ========================= */
+
+    private static Set<PermissionDto> toPermissionDtos(
+            Set<PermissionType> permissions
+    ) {
+        if (permissions == null || permissions.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        return permissions.stream()
+                .map(p -> new PermissionDto(p.name()))
+                .collect(Collectors.toUnmodifiableSet());
+    }
 }

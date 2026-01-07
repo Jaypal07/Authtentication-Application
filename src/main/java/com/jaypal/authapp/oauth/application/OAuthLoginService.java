@@ -8,6 +8,7 @@ import com.jaypal.authapp.oauth.dto.OAuthLoginResult;
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.token.application.RefreshTokenService;
+import com.jaypal.authapp.user.application.UserProvisioningService;
 import com.jaypal.authapp.user.model.Provider;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.UserRepository;
@@ -24,6 +25,7 @@ public class OAuthLoginService {
 
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
+    private final UserProvisioningService userProvisioningService;
     private final JwtService jwtService;
 
     @AuthAudit(
@@ -59,6 +61,12 @@ public class OAuthLoginService {
                     );
                 });
 
+        /*
+         * CRITICAL:
+         * Ensure IAM provisioning rules are applied
+         * before issuing any tokens.
+         */
+        userProvisioningService.provisionNewUser(user);
         RefreshToken refreshToken =
                 refreshTokenService.issue(
                         user,

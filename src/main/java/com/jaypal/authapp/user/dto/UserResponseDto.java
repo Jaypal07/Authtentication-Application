@@ -16,6 +16,7 @@ public record UserResponseDto(
         boolean enabled,
         Provider provider,
         Set<RoleDto> roles,
+        Set<PermissionDto> permissions,
         Instant createdAt,
         Instant updatedAt
 ) {}

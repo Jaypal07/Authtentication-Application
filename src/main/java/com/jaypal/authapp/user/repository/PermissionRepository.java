@@ -15,12 +15,11 @@ public interface PermissionRepository extends JpaRepository<Permission, UUID> {
     Optional<Permission> findByType(PermissionType type);
     @Query("""
         select distinct p.type
-        from User u
-        join u.userRoles ur
+        from UserRole ur
         join ur.role r
         join RolePermission rp on rp.role = r
         join rp.permission p
-        where u.id = :userId
+        where ur.user.id = :userId
     """)
-    Set<PermissionType> findPermissionTypesByUserId(@Param("userId") UUID userId);
+    Set<PermissionType> findPermissionTypesByUserId(UUID userId);
 }

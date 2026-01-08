@@ -15,7 +15,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -47,7 +46,13 @@ public class UserServiceImpl implements UserService {
             User saved = userRepository.save(user);
             userProvisioningService.provisionNewUser(saved);
 
-            return UserMapper.toResponse(saved);
+            // Reload with roles to keep response safe
+            User hydrated = requireUserWithRoles(saved.getId());
+
+            return UserMapper.toResponse(
+                    hydrated,
+                    permissionService.resolvePermissions(hydrated.getId())
+            );
 
         } catch (DataIntegrityViolationException ex) {
             throw new EmailAlreadyExistsException();
@@ -97,8 +102,8 @@ public class UserServiceImpl implements UserService {
     @PreAuthorize("hasAuthority('USER_READ')")
     @Transactional(readOnly = true)
     public UserResponseDto getUserById(String userId) {
-        User user = find(userId);
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user);
+        User user = requireUserWithRoles(UUID.fromString(userId));
+        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
         return UserMapper.toResponse(user, permissions);
     }
 
@@ -106,24 +111,11 @@ public class UserServiceImpl implements UserService {
     @PreAuthorize("hasAuthority('USER_READ')")
     @Transactional(readOnly = true)
     public UserResponseDto getUserByEmail(String email) {
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailWithRoles(email)
                 .orElseThrow(ResourceNotFoundException::new);
 
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user);
+        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
         return UserMapper.toResponse(user, permissions);
-    }
-
-    @Override
-    @PreAuthorize("hasAuthority('USER_READ')")
-    @Transactional(readOnly = true)
-    public List<UserResponseDto> getAllUsers() {
-        return userRepository.findAll()
-                .stream()
-                .map(u -> UserMapper.toResponse(
-                        u,
-                        permissionService.resolvePermissions(u)
-                ))
-                .toList();
     }
 
     /* =========================
@@ -131,10 +123,10 @@ public class UserServiceImpl implements UserService {
        ========================= */
 
     @Override
-    @PreAuthorize("#userId == authentication.principal.id")
     @Transactional
     public UserResponseDto updateUser(String userId, UserUpdateRequest req) {
-        User user = find(userId);
+
+        User user = requireUserWithRoles(UUID.fromString(userId));
 
         user.updateProfile(req.name(), req.image());
 
@@ -142,7 +134,8 @@ public class UserServiceImpl implements UserService {
             user.changePassword(passwordEncoder.encode(req.password()));
         }
 
-        return UserMapper.toResponse(user);
+        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
+        return UserMapper.toResponse(user, permissions);
     }
 
     /* =========================
@@ -153,7 +146,8 @@ public class UserServiceImpl implements UserService {
     @PreAuthorize("hasAuthority('USER_UPDATE')")
     @Transactional
     public UserResponseDto adminUpdateUser(String userId, AdminUserUpdateRequest req) {
-        User user = find(userId);
+
+        User user = requireUserWithRoles(UUID.fromString(userId));
 
         if (req.name() != null || req.image() != null) {
             user.updateProfile(req.name(), req.image());
@@ -164,7 +158,7 @@ public class UserServiceImpl implements UserService {
             else user.disable();
         }
 
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user);
+        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
         return UserMapper.toResponse(user, permissions);
     }
 
@@ -175,7 +169,7 @@ public class UserServiceImpl implements UserService {
             String userId,
             AdminUserRoleUpdateRequest req
     ) {
-        User user = find(userId);
+        User user = requireUserWithRoles(UUID.fromString(userId));
 
         if (req.addRoles() != null) {
             req.addRoles().forEach(r ->
@@ -195,7 +189,7 @@ public class UserServiceImpl implements UserService {
             );
         }
 
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user);
+        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
         return UserMapper.toResponse(user, permissions);
     }
 
@@ -203,15 +197,16 @@ public class UserServiceImpl implements UserService {
     @PreAuthorize("hasAuthority('USER_DISABLE')")
     @Transactional
     public void deleteUser(String userId) {
-        userRepository.delete(find(userId));
+        User user = requireUserWithRoles(UUID.fromString(userId));
+        userRepository.delete(user);
     }
 
     /* =========================
        INTERNAL
        ========================= */
 
-    private User find(String id) {
-        return userRepository.findById(UUID.fromString(id))
+    private User requireUserWithRoles(UUID id) {
+        return userRepository.findByIdWithRoles(id)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("User not found with ID: " + id)
                 );

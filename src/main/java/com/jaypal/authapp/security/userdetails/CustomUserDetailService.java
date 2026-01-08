@@ -36,13 +36,13 @@ public class CustomUserDetailService implements UserDetailsService {
 
         Set<GrantedAuthority> authorities = new HashSet<>();
 
-        // Roles (backward compatible)
+        // Roles
         user.getRoles().forEach(role ->
                 authorities.add(new SimpleGrantedAuthority(role))
         );
 
-        // Permissions (future enforcement)
-        permissionService.resolvePermissions(user).stream()
+        // Permissions
+        permissionService.resolvePermissions(user.getId()).stream()
                 .map(Enum::name)
                 .map(SimpleGrantedAuthority::new)
                 .forEach(authorities::add);

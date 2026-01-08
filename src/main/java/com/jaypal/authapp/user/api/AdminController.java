@@ -30,10 +30,10 @@ public class AdminController {
                 .body(userService.createUser(req));
     }
 
-    @GetMapping
-    public List<UserResponseDto> all() {
-        return userService.getAllUsers();
-    }
+//    @GetMapping
+//    public List<UserResponseDto> all() {
+//        return userService.getAllUsers();
+//    }
 
     @GetMapping("/{id}")
     public UserResponseDto get(@PathVariable String id) {

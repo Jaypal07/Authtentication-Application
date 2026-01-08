@@ -13,7 +13,7 @@ public interface UserService {
 
     UserResponseDto getUserByEmail(String email);
 
-    List<UserResponseDto> getAllUsers();
+//    List<UserResponseDto> getAllUsers();
 
     UserResponseDto updateUser(String userId, UserUpdateRequest request);
 

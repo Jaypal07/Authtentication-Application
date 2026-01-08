@@ -2,6 +2,9 @@ package com.jaypal.authapp.security.filter;
 
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
+import com.jaypal.authapp.user.application.PermissionService;
+import com.jaypal.authapp.user.model.User;
+import com.jaypal.authapp.user.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
@@ -11,6 +14,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -18,6 +22,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Component
@@ -25,6 +32,8 @@ import java.util.stream.Collectors;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
+    private final UserRepository userRepository;
+    private final PermissionService permissionService;
 
     @Override
     protected void doFilterInternal(
@@ -64,24 +73,42 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         Claims claims = parsed.getBody();
+        UUID userId = jwtService.extractUserId(claims);
+
+        User user = userRepository.findByIdWithRoles(userId)
+                .orElseThrow(() -> new JwtException("User not found"));
+
+        if(!user.isEnabled()){
+            chain.doFilter(request, response);
+            return;
+        }
+
+        Set<GrantedAuthority> authorities = new HashSet<>();
+
+        // Roles
+        user.getRoles().forEach(r ->
+                authorities.add(new SimpleGrantedAuthority(r))
+        );
+
+        // Permissions
+        permissionService.resolvePermissions(userId).stream()
+                .map(Enum::name)
+                .map(SimpleGrantedAuthority::new)
+                .forEach(authorities::add);
 
         AuthPrincipal principal = new AuthPrincipal(
-                jwtService.extractUserId(claims),
-                jwtService.extractEmail(claims),
+                user.getId(),
+                user.getEmail(),
                 null,
                 true,
-                jwtService.extractRoles(claims)
-                        .stream()
-                        .map(r -> r.startsWith("ROLE_") ? r : "ROLE_" + r)
-                        .map(SimpleGrantedAuthority::new)
-                        .collect(Collectors.toSet())
+                authorities
         );
 
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
                         principal,
                         null,
-                        principal.getAuthorities()
+                        authorities
                 );
 
         authentication.setDetails(

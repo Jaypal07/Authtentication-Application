@@ -5,8 +5,10 @@ import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.PermissionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -14,13 +16,8 @@ public class PermissionService {
 
     private final PermissionRepository permissionRepository;
 
-    /**
-     * Resolve permissions for a user in a single query.
-     * No lazy loading.
-     * No entity traversal.
-     * No transaction required.
-     */
-    public Set<PermissionType> resolvePermissions(User user) {
-        return permissionRepository.findPermissionTypesByUserId(user.getId());
+    @Transactional(readOnly = true)
+    public Set<PermissionType> resolvePermissions(UUID userId) {
+        return permissionRepository.findPermissionTypesByUserId(userId);
     }
 }

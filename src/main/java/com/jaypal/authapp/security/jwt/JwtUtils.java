@@ -18,7 +18,7 @@ public final class JwtUtils {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public static String buildToken(
+    public static String buildAccessToken(
             SecretKey key,
             String issuer,
             UUID subjectId,
@@ -38,43 +38,15 @@ public final class JwtUtils {
                 .compact();
     }
 
-    public static String buildRefreshToken(
-            SecretKey key,
-            String issuer,
-            UUID subjectId,
-            Map<String, Object> claims,
-            long ttlSeconds,
-            String jti
-    ) {
-        Instant now = Instant.now();
-
-        return Jwts.builder()
-                .setId(jti)
-                .setSubject(subjectId.toString())
-                .setIssuer(issuer)
-                .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(now.plusSeconds(ttlSeconds)))
-                .addClaims(claims)
-                .signWith(key, SignatureAlgorithm.HS512)
-                .compact();
-    }
-
-    // 🔒 STRICT PARSE
     public static Jws<Claims> parse(
             SecretKey key,
             String expectedIssuer,
             String token
     ) {
-        try {
-            return Jwts.parserBuilder()
-                    .setSigningKey(key)
-                    .requireIssuer(expectedIssuer)
-                    .build()
-                    .parseClaimsJws(token);
-        } catch (ExpiredJwtException e) {
-            throw new JwtException("Token expired");
-        } catch (JwtException e) {
-            throw new JwtException("Invalid JWT token");
-        }
+        return Jwts.parserBuilder()
+                .setSigningKey(key)
+                .requireIssuer(expectedIssuer)
+                .build()
+                .parseClaimsJws(token);
     }
 }

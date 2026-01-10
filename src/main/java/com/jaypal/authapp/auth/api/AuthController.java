@@ -36,7 +36,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.REGISTER,
-            subject = AuditSubjectType.EMAIL
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "request"
     )
     @PostMapping("/register")
     public ResponseEntity<String> register(
@@ -50,7 +51,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.EMAIL_VERIFY,
-            subject = AuditSubjectType.EMAIL
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "token"
     )
     @GetMapping("/email-verify")
     public ResponseEntity<String> verifyEmail(@RequestParam String token) {
@@ -60,7 +62,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.EMAIL_VERIFICATION_RESEND,
-            subject = AuditSubjectType.EMAIL
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "request"
     )
     @PostMapping("/resend-verification")
     public ResponseEntity<Void> resendVerification(
@@ -74,7 +77,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.LOGIN,
-            subject = AuditSubjectType.USER_ID
+            subject = AuditSubjectType.USER_ID,
+            subjectParam = "request"
     )
     @PostMapping("/login")
     public ResponseEntity<TokenResponse> login(
@@ -111,7 +115,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.TOKEN_REFRESHED,
-            subject = AuditSubjectType.ANONYMOUS
+            subject = AuditSubjectType.ANONYMOUS,
+            subjectParam = "request"
     )
     @PostMapping("/refresh")
     public ResponseEntity<TokenResponse> refresh(
@@ -133,7 +138,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.LOGOUT,
-            subject = AuditSubjectType.USER_ID
+            subject = AuditSubjectType.USER_ID,
+            subjectParam = "request"
     )
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
@@ -148,7 +154,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.PASSWORD_RESET_REQUEST,
-            subject = AuditSubjectType.EMAIL
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "request"
     )
     @PostMapping("/forgot-password")
     public ResponseEntity<Void> forgotPassword(
@@ -160,7 +167,8 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.PASSWORD_RESET_RESULT,
-            subject = AuditSubjectType.EMAIL
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "request"
     )
     @PostMapping("/reset-password")
     public ResponseEntity<String> resetPassword(

@@ -1,6 +1,5 @@
 package com.jaypal.authapp.security.principal;
 
-import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
@@ -9,32 +8,43 @@ import java.util.UUID;
 
 public final class AuthPrincipal implements UserDetails {
 
-    @Getter
     private final UUID userId;
-    private final String username;
-    private final String password;
-    private final boolean enabled;
+    private final String email;
+    private final String password; // ✅ REQUIRED for authentication
     private final Collection<? extends GrantedAuthority> authorities;
 
     public AuthPrincipal(
             UUID userId,
-            String username,
+            String email,
             String password,
-            boolean enabled,
             Collection<? extends GrantedAuthority> authorities
     ) {
         this.userId = userId;
-        this.username = username;
+        this.email = email;
         this.password = password;
-        this.enabled = enabled;
         this.authorities = authorities;
     }
+
+    // ---------- Custom getters ----------
+
+    public UUID getUserId() {
+        return userId;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    // ---------- UserDetails ----------
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return authorities;
     }
 
+    /**
+     * MUST return encoded password for Spring Security
+     */
     @Override
     public String getPassword() {
         return password;
@@ -42,7 +52,7 @@ public final class AuthPrincipal implements UserDetails {
 
     @Override
     public String getUsername() {
-        return username;
+        return email;
     }
 
     @Override
@@ -60,8 +70,4 @@ public final class AuthPrincipal implements UserDetails {
         return true;
     }
 
-    @Override
-    public boolean isEnabled() {
-        return enabled;
-    }
 }

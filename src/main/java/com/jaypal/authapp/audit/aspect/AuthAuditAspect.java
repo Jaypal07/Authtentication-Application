@@ -7,7 +7,9 @@ import com.jaypal.authapp.audit.resolver.FailureReasonResolver;
 import com.jaypal.authapp.audit.resolver.IdentityResolver;
 import com.jaypal.authapp.audit.resolver.SubjectResolver;
 import lombok.RequiredArgsConstructor;
+import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.*;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -23,9 +25,12 @@ public class AuthAuditAspect {
     private final SubjectResolver subjectResolver;
 
     @AfterReturning(pointcut = "@annotation(authAudit)", returning = "result")
-    public void success(AuthAudit authAudit, Object result) {
-
-        AuditSubject subject = resolveSubject(authAudit, result);
+    public void success(
+            JoinPoint jp,
+            AuthAudit authAudit,
+            Object result
+    ) {
+        AuditSubject subject = resolveSubject(jp, authAudit, result);
 
         auditService.record(
                 resolveCategory(authAudit.event()),
@@ -39,10 +44,13 @@ public class AuthAuditAspect {
     }
 
     @AfterThrowing(pointcut = "@annotation(authAudit)", throwing = "ex")
-    public void failure(AuthAudit authAudit, Throwable ex) {
-
+    public void failure(
+            JoinPoint jp,
+            AuthAudit authAudit,
+            Throwable ex
+    ) {
         AuthFailureReason reason = failureResolver.resolve(ex);
-        AuditSubject subject = resolveSubject(authAudit, null);
+        AuditSubject subject = resolveSubject(jp, authAudit, null);
 
         auditService.record(
                 resolveCategory(authAudit.event()),
@@ -55,15 +63,31 @@ public class AuthAuditAspect {
         );
     }
 
-    private AuditSubject resolveSubject(AuthAudit authAudit, Object result) {
-
+    private AuditSubject resolveSubject(
+            JoinPoint jp,
+            AuthAudit authAudit,
+            Object result
+    ) {
         UUID userId = identityResolver.fromSecurityContext();
-        if (userId != null) return AuditSubject.userId(userId.toString());
+        if (userId != null) {
+            return AuditSubject.userId(userId.toString());
+        }
 
-        UUID fromResult = result != null ? identityResolver.fromResult(result) : null;
-        if (fromResult != null) return AuditSubject.userId(fromResult.toString());
+        UUID fromResult = result != null
+                ? identityResolver.fromResult(result)
+                : null;
 
-        return subjectResolver.resolve(authAudit);
+        if (fromResult != null) {
+            return AuditSubject.userId(fromResult.toString());
+        }
+
+        MethodSignature sig = (MethodSignature) jp.getSignature();
+
+        return subjectResolver.resolve(
+                authAudit,
+                jp.getArgs(),
+                sig.getParameterNames()
+        );
     }
 
     private AuditCategory resolveCategory(AuthAuditEvent event) {
@@ -95,5 +119,3 @@ public class AuthAuditAspect {
         };
     }
 }
-
-

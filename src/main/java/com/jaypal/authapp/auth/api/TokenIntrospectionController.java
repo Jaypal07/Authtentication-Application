@@ -1,5 +1,9 @@
 package com.jaypal.authapp.auth.api;
 
+import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.domain.AuditSubjectType;
+import com.jaypal.authapp.audit.domain.AuthAuditEvent;
+import com.jaypal.authapp.audit.domain.AuthProvider;
 import com.jaypal.authapp.auth.dto.TokenIntrospectionResponse;
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.user.model.User;
@@ -23,6 +27,12 @@ public class TokenIntrospectionController {
     private final JwtService jwtService;
     private final UserRepository userRepository;
 
+    @AuthAudit(
+            event = AuthAuditEvent.TOKEN_REVOKED,
+            subject = AuditSubjectType.USER_ID,
+            provider = AuthProvider.SYSTEM,
+            subjectParam = "header"
+    )
     @PostMapping("/introspect")
     public TokenIntrospectionResponse introspect(
             @RequestHeader(name = "Authorization", required = false) String header
@@ -33,12 +43,8 @@ public class TokenIntrospectionController {
 
         Jws<Claims> parsed;
         try {
-            parsed = jwtService.parse(header.substring(7).trim());
+            parsed = jwtService.parseAccessToken(header.substring(7).trim());
         } catch (JwtException ex) {
-            return TokenIntrospectionResponse.inactive();
-        }
-
-        if (!jwtService.isAccessToken(parsed)) {
             return TokenIntrospectionResponse.inactive();
         }
 

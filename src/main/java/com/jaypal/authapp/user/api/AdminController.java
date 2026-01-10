@@ -25,7 +25,8 @@ public class AdminController {
     @AuthAudit(
             event = AuthAuditEvent.ADMIN_USER_CREATED,
             subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.SYSTEM
+            provider = AuthProvider.SYSTEM,
+            subjectParam = "req"
     )
     @PostMapping
     public ResponseEntity<UserResponseDto> create(
@@ -39,7 +40,8 @@ public class AdminController {
     @AuthAudit(
             event = AuthAuditEvent.ADMIN_USER_UPDATED,
             subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.SYSTEM
+            provider = AuthProvider.SYSTEM,
+            subjectParam = "req"
     )
     @PutMapping("/{id}")
     public UserResponseDto adminUpdate(
@@ -52,7 +54,8 @@ public class AdminController {
     @AuthAudit(
             event = AuthAuditEvent.ROLE_ASSIGNED,
             subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.SYSTEM
+            provider = AuthProvider.SYSTEM,
+            subjectParam = "req"
     )
     @PutMapping("/{id}/roles")
     public UserResponseDto updateUserRoles(
@@ -65,7 +68,8 @@ public class AdminController {
     @AuthAudit(
             event = AuthAuditEvent.ADMIN_USER_DELETED,
             subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.SYSTEM
+            provider = AuthProvider.SYSTEM,
+            subjectParam = "request"
     )
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id) {

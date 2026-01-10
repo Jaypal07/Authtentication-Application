@@ -1,8 +1,7 @@
 package com.jaypal.authapp.security.jwt;
 
 public enum TokenType {
-    ACCESS,
-    REFRESH;
+    ACCESS;
 
     public static TokenType from(String value) {
         return TokenType.valueOf(value.toUpperCase());

@@ -15,6 +15,10 @@ public @interface AuthAudit {
 
     AuditSubjectType subject();
 
-    AuthProvider provider() default AuthProvider.LOCAL;
+    AuthProvider provider() default AuthProvider.SYSTEM;
+    /**
+     * REQUIRED when subject is EMAIL or USER_ID.
+     * Name of the method parameter that carries the subject.
+     */
+    String subjectParam() default "";
 }
-

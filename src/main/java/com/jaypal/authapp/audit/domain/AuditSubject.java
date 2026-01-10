@@ -8,7 +8,7 @@ public final class AuditSubject {
     private final String identifier;
 
     private AuditSubject(AuditSubjectType type, String identifier) {
-        this.type = Objects.requireNonNull(type, "subject type must not be null");
+        this.type = Objects.requireNonNull(type);
         this.identifier = identifier;
     }
 
@@ -27,11 +27,11 @@ public final class AuditSubject {
         return new AuditSubject(AuditSubjectType.USER_ID, userId);
     }
 
-    public static AuditSubject email(String emailHashOrEncrypted) {
-        if (emailHashOrEncrypted == null || emailHashOrEncrypted.isBlank()) {
-            throw new IllegalArgumentException("email identifier must not be blank");
+    public static AuditSubject email(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("email must not be blank");
         }
-        return new AuditSubject(AuditSubjectType.EMAIL, emailHashOrEncrypted);
+        return new AuditSubject(AuditSubjectType.EMAIL, email);
     }
 
     public AuditSubjectType getType() {

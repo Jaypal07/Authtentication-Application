@@ -12,8 +12,7 @@ public class GoogleOAuthUserInfoMapper
 
         String sub = getRequired(attrs, "sub");
         String name = getRequired(attrs, "name");
-
-        String email = (String) attrs.get("email");
+        String email = getRequired(attrs, "email");
         String picture = (String) attrs.get("picture");
 
         return new ValidatedOAuthUserInfo(

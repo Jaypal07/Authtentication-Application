@@ -20,7 +20,8 @@ public class UserController {
 
     @AuthAudit(
             event = AuthAuditEvent.ACCOUNT_UPDATED,
-            subject = AuditSubjectType.USER_ID
+            subject = AuditSubjectType.USER_ID,
+            subjectParam = "userId"
     )
     @PutMapping("/{userId}")
     public ResponseEntity<UserResponseDto> updateUserDetails(

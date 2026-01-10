@@ -25,7 +25,8 @@ public class AuthLogoutController {
     @AuthAudit(
             event = AuthAuditEvent.TOKEN_REVOKED,
             subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.SYSTEM
+            provider = AuthProvider.SYSTEM,
+            subjectParam = "principal"
     )
     @PostMapping("/logout-all")
     public ResponseEntity<Void> logoutAll(

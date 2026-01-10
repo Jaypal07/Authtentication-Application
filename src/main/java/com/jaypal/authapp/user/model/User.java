@@ -85,7 +85,7 @@ public class User {
                 .permissionVersion(0L)
                 .name(name)
                 .enabled(false)
-                .provider(Provider.LOCAL)
+                .provider(Provider.SYSTEM)
                 .providerId(id.toString())
                 .createdAt(now)
                 .updatedAt(now)

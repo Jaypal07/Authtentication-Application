@@ -17,10 +17,12 @@ public enum AuthFailureReason {
     EMAIL_ALREADY_VERIFIED(AuditSeverity.LOW),
     EMAIL_NOT_REGISTERED(AuditSeverity.LOW),
 
+
     VALIDATION_FAILED(AuditSeverity.LOW),
 
     RESET_TOKEN_INVALID(AuditSeverity.HIGH),
     RESET_TOKEN_EXPIRED(AuditSeverity.MEDIUM),
+    ACCESS_DENIED(AuditSeverity.MEDIUM),
 
     PASSWORD_POLICY_VIOLATION(AuditSeverity.MEDIUM),
 

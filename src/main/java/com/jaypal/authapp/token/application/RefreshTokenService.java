@@ -2,10 +2,8 @@ package com.jaypal.authapp.token.application;
 
 import com.jaypal.authapp.token.exception.RefreshTokenExpiredException;
 import com.jaypal.authapp.token.exception.RefreshTokenNotFoundException;
-import com.jaypal.authapp.token.exception.RefreshTokenUserMismatchException;
 import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.token.repository.RefreshTokenRepository;
-import com.jaypal.authapp.user.model.User;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -21,135 +19,105 @@ import java.util.UUID;
 public class RefreshTokenService {
 
     private final RefreshTokenRepository repository;
-
-    // ---------- ISSUE ----------
+    private final RefreshTokenHasher tokenHasher;
 
     @Transactional
-    public RefreshToken issue(User user, long ttlSeconds) {
+    public IssuedRefreshToken issue(UUID userId, long ttlSeconds) {
 
-        RefreshToken token = RefreshToken.builder()
-                .jti(UUID.randomUUID().toString())
-                .user(user)
-                .expiresAt(Instant.now().plusSeconds(ttlSeconds))
-                .build();
+        String rawToken = RefreshTokenGenerator.generate();
+        String tokenHash = tokenHasher.hash(rawToken);
 
-        return repository.save(token);
+        RefreshToken token = RefreshToken.issue(
+                tokenHash,
+                userId,
+                Instant.now(),
+                Instant.now().plusSeconds(ttlSeconds)
+        );
+
+        repository.save(token);
+
+        return new IssuedRefreshToken(rawToken, token.getExpiresAt());
     }
 
-    // ---------- VALIDATE ----------
-
     @Transactional
-    public RefreshToken validate(String jti, UUID userId) {
+    public RefreshToken validate(String rawToken) {
 
-        RefreshToken token = repository.findForRefresh(jti)
-                .orElseThrow(() -> {
-                    log.error(
-                            "REFRESH INVALID: token not found. jti={}, userId={}",
-                            jti, userId
-                    );
-                    return new RefreshTokenNotFoundException();
-                });
+        String tokenHash = tokenHasher.hash(rawToken);
 
-        if (!token.getUser().getId().equals(userId)) {
-            log.error(
-                    "REFRESH INVALID: user mismatch. jti={}, tokenUser={}, requestUser={}",
-                    jti, token.getUser().getId(), userId
-            );
-            throw new RefreshTokenUserMismatchException();
-        }
+        RefreshToken token = repository.findByTokenHash(tokenHash)
+                .orElseThrow(RefreshTokenNotFoundException::new);
 
-        if (token.getExpiresAt().isBefore(Instant.now())) {
-            log.warn(
-                    "REFRESH EXPIRED. jti={}, exp={}",
-                    jti, token.getExpiresAt()
-            );
-            throw new RefreshTokenExpiredException();
-        }
+        if (!token.isActive(Instant.now())) {
 
-        if (token.isRevoked()) {
-
-            if (token.getReplacedByToken() != null) {
-                log.warn(
-                        "REFRESH REUSE BLOCKED. oldJti={}, replacedBy={}",
-                        jti, token.getReplacedByToken()
-                );
-            } else {
-                log.warn(
-                        "REFRESH REVOKED (logout/admin). jti={}",
-                        jti
+            if (token.wasRotated()) {
+                log.error(
+                        "REFRESH TOKEN REUSE DETECTED userId={} replacedByHash={}",
+                        token.getUserId(),
+                        token.getReplacedByTokenHash()
                 );
             }
 
             throw new RefreshTokenExpiredException();
         }
 
-        log.info(
-                "REFRESH VALIDATED. jti={}, userId={}",
-                jti, userId
-        );
-
         return token;
     }
 
-    // ---------- ROTATE ----------
 
     @Transactional
-    public RefreshToken rotate(RefreshToken current, long ttlSeconds) {
+    public IssuedRefreshToken rotate(
+            RefreshToken current,
+            long ttlSeconds
+    ) {
 
         try {
-            String nextJti = UUID.randomUUID().toString();
+            String nextRaw = RefreshTokenGenerator.generate();
+            String nextHash = tokenHasher.hash(nextRaw);
 
-            current.revoke(nextJti);
+            current.rotate(nextHash);
             repository.save(current);
 
-            RefreshToken next = RefreshToken.builder()
-                    .jti(nextJti)
-                    .user(current.getUser())
-                    .expiresAt(Instant.now().plusSeconds(ttlSeconds))
-                    .build();
-
-            log.info(
-                    "ROTATING refresh token. oldJti={}, newJti={}, userId={}",
-                    current.getJti(),
-                    nextJti,
-                    current.getUser().getId()
+            RefreshToken next = RefreshToken.issue(
+                    nextHash,
+                    current.getUserId(),
+                    Instant.now(),
+                    Instant.now().plusSeconds(ttlSeconds)
             );
 
-            return repository.save(next);
+            repository.save(next);
+
+            return new IssuedRefreshToken(nextRaw, next.getExpiresAt());
 
         } catch (OptimisticLockException ex) {
-
-            log.warn(
-                    "REFRESH RACE LOST. jti={}, userId={}",
-                    current.getJti(),
-                    current.getUser().getId()
-            );
-
-            current.revoke();
-            repository.save(current);
-
             throw new RefreshTokenExpiredException();
         }
     }
 
-    // ---------- LOGOUT (SINGLE SESSION) ----------
-
     @Transactional
-    public void revoke(String jti, UUID userId) {
+    public void revoke(String rawToken) {
 
-        repository.findByJtiAndUserId(jti, userId)
+        String tokenHash = tokenHasher.hash(rawToken);
+
+        repository.findByTokenHash(tokenHash)
                 .ifPresent(token -> {
-                    if (!token.isRevoked()) {
+                    if (token.isActive(Instant.now())) {
                         token.revoke();
                         repository.save(token);
                     }
                 });
     }
 
-    // ---------- ADMIN / SECURITY ----------
 
     @Transactional
     public void revokeAllForUser(UUID userId) {
-        repository.revokeAllActiveByUserId(userId);
+
+        for (RefreshToken token :
+                repository.findAllByUserIdAndRevokedFalse(userId)) {
+
+            if (token.isActive(Instant.now())) {
+                token.revoke();
+                repository.save(token);
+            }
+        }
     }
 }

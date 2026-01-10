@@ -7,6 +7,7 @@ import com.jaypal.authapp.auth.infrastructure.email.EmailService;
 import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
+import com.jaypal.authapp.token.application.IssuedRefreshToken;
 import com.jaypal.authapp.token.application.RefreshTokenService;
 import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.user.application.PermissionService;
@@ -17,9 +18,6 @@ import com.jaypal.authapp.user.model.PermissionType;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.repository.PasswordResetTokenRepository;
 import com.jaypal.authapp.user.repository.UserRepository;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
-import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -70,77 +68,48 @@ public class AuthService {
     // ---------- REFRESH ----------
 
     @Transactional
-    public AuthLoginResult refresh(String refreshJwt) {
+    public AuthLoginResult refresh(String rawRefreshToken) {
 
-        Jws<Claims> parsed;
-        try {
-            parsed = jwtService.parse(refreshJwt);
-        } catch (JwtException ex) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             throw new InvalidRefreshTokenException();
         }
-
-        if (!jwtService.isRefreshToken(parsed)) {
-            throw new InvalidRefreshTokenException();
-        }
-
-        Claims claims = parsed.getBody();
-        UUID userId = UUID.fromString(claims.getSubject());
-        String jti = claims.getId();
 
         RefreshToken current =
-                refreshTokenService.validate(jti, userId);
+                refreshTokenService.validate(rawRefreshToken);
 
-        RefreshToken next =
+        IssuedRefreshToken next =
                 refreshTokenService.rotate(
                         current,
                         jwtService.getRefreshTtlSeconds()
                 );
 
-        User user = current.getUser();
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
+        UUID userId = current.getUserId();
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(AuthenticatedUserMissingException::new);
+
+        Set<PermissionType> permissions =
+                permissionService.resolvePermissions(userId);
 
         return new AuthLoginResult(
                 user,
                 jwtService.generateAccessToken(user, permissions),
-                jwtService.generateRefreshToken(
-                        user,
-                        next.getJti()
-                ),
-                jwtService.getRefreshTtlSeconds()
+                next.token(),
+                next.expiresAt().getEpochSecond()
         );
     }
+
 
     // ---------- LOGOUT ----------
 
     @Transactional
-    public void logout(String refreshJwt) {
+    public void logout(String rawRefreshToken) {
 
-        Jws<Claims> parsed;
-        try {
-            parsed = jwtService.parse(refreshJwt);
-        } catch (JwtException ex) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             return;
         }
 
-        if (!jwtService.isRefreshToken(parsed)) {
-            return;
-        }
-
-        Claims claims = parsed.getBody();
-
-        UUID userId;
-        try {
-            userId = UUID.fromString(claims.getSubject());
-        } catch (IllegalArgumentException ex) {
-            return;
-        }
-
-        String jti = claims.getId();
-        if (jti == null || jti.isBlank()) {
-            return;
-        }
-
-        refreshTokenService.revoke(jti, userId);
+        refreshTokenService.revoke(rawRefreshToken);
     }
 
     // ---------- EMAIL ----------
@@ -218,22 +187,20 @@ public class AuthService {
 
     private AuthLoginResult issueTokens(User user) {
 
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
+        Set<PermissionType> permissions =
+                permissionService.resolvePermissions(user.getId());
 
-        RefreshToken refreshToken =
+        IssuedRefreshToken refreshToken =
                 refreshTokenService.issue(
-                        user,
+                        user.getId(),
                         jwtService.getRefreshTtlSeconds()
                 );
 
         return new AuthLoginResult(
                 user,
                 jwtService.generateAccessToken(user, permissions),
-                jwtService.generateRefreshToken(
-                        user,
-                        refreshToken.getJti()
-                ),
-                jwtService.getRefreshTtlSeconds()
+                refreshToken.token(),
+                refreshToken.expiresAt().getEpochSecond()
         );
     }
 }

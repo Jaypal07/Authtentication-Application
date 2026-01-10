@@ -8,8 +8,8 @@ import com.jaypal.authapp.oauth.dto.OAuthLoginResult;
 import com.jaypal.authapp.oauth.mapper.OAuthUserInfoMapperFactory;
 import com.jaypal.authapp.oauth.model.ValidatedOAuthUserInfo;
 import com.jaypal.authapp.security.jwt.JwtService;
+import com.jaypal.authapp.token.application.IssuedRefreshToken;
 import com.jaypal.authapp.token.application.RefreshTokenService;
-import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.user.application.PermissionService;
 import com.jaypal.authapp.user.application.UserProvisioningService;
 import com.jaypal.authapp.user.model.PermissionType;
@@ -37,8 +37,7 @@ public class OAuthLoginService {
 
     @AuthAudit(
             event = AuthAuditEvent.OAUTH_LOGIN,
-            subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.GOOGLE
+            subject = AuditSubjectType.USER_ID
     )
     @Transactional
     public OAuthLoginResult login(OAuth2AuthenticationToken authentication) {
@@ -74,22 +73,24 @@ public class OAuthLoginService {
 
         /*
          * CRITICAL:
-         * IAM provisioning must happen before token issuance
+         * Provisioning and permission initialization
+         * must happen before token issuance
          */
         userProvisioningService.provisionNewUser(user);
 
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
+        Set<PermissionType> permissions =
+                permissionService.resolvePermissions(user.getId());
 
-        RefreshToken refreshToken =
+        IssuedRefreshToken refreshToken =
                 refreshTokenService.issue(
-                        user,
+                        user.getId(),
                         jwtService.getRefreshTtlSeconds()
                 );
 
         return new OAuthLoginResult(
                 jwtService.generateAccessToken(user, permissions),
-                jwtService.generateRefreshToken(user, refreshToken.getJti()),
-                jwtService.getRefreshTtlSeconds()
+                refreshToken.token(),
+                refreshToken.expiresAt().getEpochSecond()
         );
     }
 }

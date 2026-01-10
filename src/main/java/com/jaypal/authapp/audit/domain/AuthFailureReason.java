@@ -2,24 +2,37 @@ package com.jaypal.authapp.audit.domain;
 
 public enum AuthFailureReason {
 
-    INVALID_CREDENTIALS,
-    USER_NOT_FOUND,
-    ACCOUNT_DISABLED,
-    ACCOUNT_LOCKED,
+    INVALID_CREDENTIALS(AuditSeverity.LOW),
+    USER_NOT_FOUND(AuditSeverity.LOW),
 
-    TOKEN_MISSING,
-    TOKEN_INVALID,
-    TOKEN_EXPIRED,
-    TOKEN_REVOKED,
+    ACCOUNT_DISABLED(AuditSeverity.HIGH),
+    ACCOUNT_LOCKED(AuditSeverity.HIGH),
 
-    EMAIL_ALREADY_EXISTS,
-    EMAIL_ALREADY_VERIFIED,
-    EMAIL_NOT_REGISTERED,
-    VALIDATION_FAILED,
+    TOKEN_MISSING(AuditSeverity.MEDIUM),
+    TOKEN_INVALID(AuditSeverity.HIGH),
+    TOKEN_EXPIRED(AuditSeverity.MEDIUM),
+    TOKEN_REVOKED(AuditSeverity.CRITICAL),
 
-    RESET_TOKEN_INVALID,
-    RESET_TOKEN_EXPIRED,
-    PASSWORD_POLICY_VIOLATION,
+    EMAIL_ALREADY_EXISTS(AuditSeverity.LOW),
+    EMAIL_ALREADY_VERIFIED(AuditSeverity.LOW),
+    EMAIL_NOT_REGISTERED(AuditSeverity.LOW),
 
-    SYSTEM_ERROR
+    VALIDATION_FAILED(AuditSeverity.LOW),
+
+    RESET_TOKEN_INVALID(AuditSeverity.HIGH),
+    RESET_TOKEN_EXPIRED(AuditSeverity.MEDIUM),
+
+    PASSWORD_POLICY_VIOLATION(AuditSeverity.MEDIUM),
+
+    SYSTEM_ERROR(AuditSeverity.CRITICAL);
+
+    private final AuditSeverity severity;
+
+    AuthFailureReason(AuditSeverity severity) {
+        this.severity = severity;
+    }
+
+    public AuditSeverity getSeverity() {
+        return severity;
+    }
 }

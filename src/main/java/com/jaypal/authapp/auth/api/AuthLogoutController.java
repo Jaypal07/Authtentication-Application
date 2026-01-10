@@ -1,5 +1,9 @@
 package com.jaypal.authapp.auth.api;
 
+import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.domain.AuditSubjectType;
+import com.jaypal.authapp.audit.domain.AuthAuditEvent;
+import com.jaypal.authapp.audit.domain.AuthProvider;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.token.application.RefreshTokenService;
 import com.jaypal.authapp.user.repository.UserRepository;
@@ -18,6 +22,11 @@ public class AuthLogoutController {
     private final RefreshTokenService refreshTokenService;
     private final UserRepository userRepository;
 
+    @AuthAudit(
+            event = AuthAuditEvent.TOKEN_REVOKED,
+            subject = AuditSubjectType.USER_ID,
+            provider = AuthProvider.SYSTEM
+    )
     @PostMapping("/logout-all")
     public ResponseEntity<Void> logoutAll(
             @AuthenticationPrincipal AuthPrincipal principal
@@ -34,3 +43,4 @@ public class AuthLogoutController {
         return ResponseEntity.noContent().build();
     }
 }
+

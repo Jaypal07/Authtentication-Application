@@ -1,9 +1,10 @@
 package com.jaypal.authapp.audit.persistence;
 
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.Repository;
 
 import java.util.UUID;
 
-public interface AuthAuditRepository
-        extends JpaRepository<AuthAuditLog, UUID> {
+public interface AuthAuditRepository extends Repository<AuthAuditLog, UUID> {
+    AuthAuditLog save(AuthAuditLog log);
+    long count();
 }

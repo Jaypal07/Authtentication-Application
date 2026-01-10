@@ -1,7 +1,9 @@
 package com.jaypal.authapp.oauth.application;
 
 import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.domain.AuditSubjectType;
 import com.jaypal.authapp.audit.domain.AuthAuditEvent;
+import com.jaypal.authapp.audit.domain.AuthProvider;
 import com.jaypal.authapp.oauth.dto.OAuthLoginResult;
 import com.jaypal.authapp.oauth.mapper.OAuthUserInfoMapperFactory;
 import com.jaypal.authapp.oauth.model.ValidatedOAuthUserInfo;
@@ -34,8 +36,9 @@ public class OAuthLoginService {
     private final JwtService jwtService;
 
     @AuthAudit(
-            event = AuthAuditEvent.OAUTH_LOGIN_SUCCESS,
-            provider = "OAUTH"
+            event = AuthAuditEvent.OAUTH_LOGIN,
+            subject = AuditSubjectType.USER_ID,
+            provider = AuthProvider.GOOGLE
     )
     @Transactional
     public OAuthLoginResult login(OAuth2AuthenticationToken authentication) {

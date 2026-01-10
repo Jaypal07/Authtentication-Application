@@ -2,25 +2,36 @@ package com.jaypal.authapp.audit.domain;
 
 public enum AuthAuditEvent {
 
-    LOGIN_SUCCESS,
-    LOGIN_FAILURE,
+    // ---------- AUTHENTICATION ----------
+    LOGIN,
     LOGOUT,
-
     REGISTER,
     EMAIL_VERIFY,
     EMAIL_VERIFICATION_RESEND,
+    OAUTH_LOGIN,
 
-    OAUTH_LOGIN_SUCCESS,
-    OAUTH_LOGIN_FAILURE,
-
-    TOKEN_REFRESH,
-    TOKEN_ROTATION,
+    // ---------- TOKEN ----------
+    TOKEN_ISSUED,
+    TOKEN_REFRESHED,
     TOKEN_REVOKED,
 
+    // ---------- PASSWORD ----------
     PASSWORD_CHANGE,
-    FORGOT_PASSWORD_REQUEST,
-    PASSWORD_RESET_SUCCESS,
-    PASSWORD_RESET_FAILURE,
+    PASSWORD_RESET_REQUEST,
+    PASSWORD_RESET_RESULT,
 
-    ACCOUNT_DISABLED
+    // ---------- ACCOUNT ----------
+    ACCOUNT_UPDATED,
+    ACCOUNT_DISABLED,
+
+    // ---------- AUTHORIZATION ----------
+    ROLE_ASSIGNED,
+    ROLE_REMOVED,
+    PERMISSION_GRANTED,
+    PERMISSION_REVOKED,
+
+    // ---------- ADMIN ----------
+    ADMIN_USER_CREATED,
+    ADMIN_USER_UPDATED,
+    ADMIN_USER_DELETED
 }

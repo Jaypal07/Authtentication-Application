@@ -1,14 +1,12 @@
 package com.jaypal.authapp.audit.aspect;
 
 import com.jaypal.authapp.audit.annotation.AuthAudit;
-import com.jaypal.authapp.audit.context.AuditContext;
-import com.jaypal.authapp.audit.domain.AuthAuditEvent;
-import com.jaypal.authapp.audit.domain.AuthFailureReason;
-import com.jaypal.authapp.audit.resolver.*;
 import com.jaypal.authapp.audit.application.AuthAuditService;
-import jakarta.servlet.http.HttpServletRequest;
+import com.jaypal.authapp.audit.domain.*;
+import com.jaypal.authapp.audit.resolver.FailureReasonResolver;
+import com.jaypal.authapp.audit.resolver.IdentityResolver;
+import com.jaypal.authapp.audit.resolver.SubjectResolver;
 import lombok.RequiredArgsConstructor;
-import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.*;
 import org.springframework.stereotype.Component;
 
@@ -23,79 +21,79 @@ public class AuthAuditAspect {
     private final FailureReasonResolver failureResolver;
     private final IdentityResolver identityResolver;
     private final SubjectResolver subjectResolver;
-    private final HttpServletRequest request;
 
-    @AfterReturning(
-            pointcut = "@annotation(authAudit)",
-            returning = "result"
-    )
-    public void success(
-            JoinPoint jp,
-            AuthAudit authAudit,
-            Object result
-    ) {
-        try {
-            UUID userId = identityResolver.resolveFromContext();
-            if (userId == null) {
-                userId = identityResolver.resolveFromResult(result);
-            }
+    @AfterReturning(pointcut = "@annotation(authAudit)", returning = "result")
+    public void success(AuthAudit authAudit, Object result) {
 
-            String subject = userId == null
-                    ? subjectResolver.resolve(authAudit, jp.getArgs())
-                    : null;
+        AuditSubject subject = resolveSubject(authAudit, result);
 
-            auditService.log(
-                    userId,
-                    subject,
-                    authAudit.event(),
-                    authAudit.provider(),
-                    request,
-                    true,
-                    null
-            );
-        } finally {
-            AuditContext.clear();
-        }
+        auditService.record(
+                resolveCategory(authAudit.event()),
+                authAudit.event(),
+                AuditOutcome.SUCCESS,
+                subject,
+                null,
+                authAudit.provider(),
+                null
+        );
     }
 
-    @AfterThrowing(
-            pointcut = "@annotation(authAudit)",
-            throwing = "ex"
-    )
-    public void failure(
-            JoinPoint jp,
-            AuthAudit authAudit,
-            Throwable ex
-    ) {
-        try {
-            AuthAuditEvent event = mapFailureEvent(authAudit.event());
-            AuthFailureReason reason = failureResolver.resolve(event, ex);
+    @AfterThrowing(pointcut = "@annotation(authAudit)", throwing = "ex")
+    public void failure(AuthAudit authAudit, Throwable ex) {
 
-            UUID userId = identityResolver.resolveFromContext();
-            String subject = userId == null
-                    ? subjectResolver.resolve(authAudit, jp.getArgs())
-                    : null;
+        AuthFailureReason reason = failureResolver.resolve(ex);
+        AuditSubject subject = resolveSubject(authAudit, null);
 
-            auditService.log(
-                    userId,
-                    subject,
-                    event,
-                    authAudit.provider(),
-                    request,
-                    false,
-                    reason
-            );
-        } finally {
-            AuditContext.clear();
-        }
+        auditService.record(
+                resolveCategory(authAudit.event()),
+                authAudit.event(),
+                AuditOutcome.FAILURE,
+                subject,
+                reason,
+                authAudit.provider(),
+                null
+        );
     }
 
-    private AuthAuditEvent mapFailureEvent(AuthAuditEvent successEvent) {
-        return switch (successEvent) {
-            case LOGIN_SUCCESS -> AuthAuditEvent.LOGIN_FAILURE;
-            case OAUTH_LOGIN_SUCCESS -> AuthAuditEvent.OAUTH_LOGIN_FAILURE;
-            case PASSWORD_RESET_SUCCESS -> AuthAuditEvent.PASSWORD_RESET_FAILURE;
-            default -> successEvent;
+    private AuditSubject resolveSubject(AuthAudit authAudit, Object result) {
+
+        UUID userId = identityResolver.fromSecurityContext();
+        if (userId != null) return AuditSubject.userId(userId.toString());
+
+        UUID fromResult = result != null ? identityResolver.fromResult(result) : null;
+        if (fromResult != null) return AuditSubject.userId(fromResult.toString());
+
+        return subjectResolver.resolve(authAudit);
+    }
+
+    private AuditCategory resolveCategory(AuthAuditEvent event) {
+        return switch (event) {
+
+            case LOGIN, LOGOUT, REGISTER,
+                 EMAIL_VERIFY, EMAIL_VERIFICATION_RESEND,
+                 OAUTH_LOGIN,
+                 TOKEN_ISSUED, TOKEN_REFRESHED, TOKEN_REVOKED
+                    -> AuditCategory.AUTHENTICATION;
+
+            case PASSWORD_CHANGE,
+                 PASSWORD_RESET_REQUEST,
+                 PASSWORD_RESET_RESULT,
+                 ACCOUNT_UPDATED,
+                 ACCOUNT_DISABLED
+                    -> AuditCategory.ACCOUNT;
+
+            case ROLE_ASSIGNED,
+                 ROLE_REMOVED,
+                 PERMISSION_GRANTED,
+                 PERMISSION_REVOKED
+                    -> AuditCategory.AUTHORIZATION;
+
+            case ADMIN_USER_CREATED,
+                 ADMIN_USER_UPDATED,
+                 ADMIN_USER_DELETED
+                    -> AuditCategory.ADMIN;
         };
     }
 }
+
+

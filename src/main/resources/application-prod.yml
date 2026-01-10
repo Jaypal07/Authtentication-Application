@@ -1,7 +1,6 @@
 server:
   port: ${SERVER_PORT:8081}
   forward-headers-strategy: framework
-
   ssl:
     enabled: false
 
@@ -15,14 +14,14 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      pool-name: ${DB_POOL_NAME}
-      maximum-pool-size: ${DB_MAX_POOL_SIZE}
-      minimum-idle: ${DB_MIN_IDLE}
-      connection-timeout: ${DB_CONNECTION_TIMEOUT}
-      idle-timeout: ${DB_IDLE_TIMEOUT}
-      max-lifetime: ${DB_MAX_LIFETIME}
-      validation-timeout: ${DB_VALIDATION_TIMEOUT}
-      leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD}
+      pool-name: ${DB_POOL_NAME:HikariCP}
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:5}
+      minimum-idle: ${DB_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:10000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      validation-timeout: ${DB_VALIDATION_TIMEOUT:5000}
+      leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD:0}
       initialization-fail-timeout: -1
 
   jpa:
@@ -31,7 +30,8 @@ spring:
     open-in-view: false
     properties:
       hibernate:
-        show_sql: ${HIBERNATE_SHOW_SQL}
+        default_schema: public 
+        show_sql: ${HIBERNATE_SHOW_SQL:false}
         format_sql: false
 
   security:
@@ -39,16 +39,16 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
             scope:
               - openid
               - profile
               - email
 
           github:
-            client-id: ${GITHUB_CLIENT_ID}
-            client-secret: ${GITHUB_CLIENT_SECRET}
+            client-id: ${GITHUB_CLIENT_ID:}
+            client-secret: ${GITHUB_CLIENT_SECRET:}
             scope:
               - user:email
               - read:user
@@ -72,30 +72,29 @@ spring:
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
-      mail:
-        smtp:
-          auth: ${MAIL_SMTP_AUTH}
-          starttls:
-            enable: ${MAIL_SMTP_STARTTLS_ENABLE}
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
 
 app:
   frontend:
-    base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+    base-url: ${FRONTEND_BASE_URL}
+    success-redirect: ${FRONTEND_SUCCESS_REDIRECT:}
+    failure-redirect: ${FRONTEND_FAILURE_REDIRECT:}
 
 security:
   jwt:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
-    access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS}
-    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS}
-    refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME}
-    cookie-secure: ${JWT_COOKIE_SECURE}
-    cookie-http-only: ${JWT_COOKIE_HTTP_ONLY}
-    cookie-same-site: ${JWT_COOKIE_SAME_SITE}
-    cookie-domain: ${JWT_COOKIE_DOMAIN}
+    access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
+    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:86400}
+    refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME:refreshToken}
+    cookie-secure: ${JWT_COOKIE_SECURE:true}
+    cookie-http-only: ${JWT_COOKIE_HTTP_ONLY:true}
+    cookie-same-site: ${JWT_COOKIE_SAME_SITE:lax}
+    cookie-domain: ${JWT_COOKIE_DOMAIN:}
 
 logging:
   level:
     root: INFO
-    org.springframework.security: ${SECURITY_LOG_LEVEL}
-    org.hibernate.SQL: ${HIBERNATE_SQL_LOG_LEVEL}
+    org.springframework.security: ${SECURITY_LOG_LEVEL:INFO}
+    org.hibernate.SQL: ${HIBERNATE_SQL_LOG_LEVEL:WARN}

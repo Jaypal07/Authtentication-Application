@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Slf4j
@@ -25,30 +27,33 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        log.info("Starting IAM permission bootstrap");
+        try {
+            log.info("Starting IAM permission bootstrap");
 
-        bootstrapRoles();
-        roleRepository.flush();
+            bootstrapRoles();
+            bootstrapPermissions();
+            bootstrapRolePermissions();
 
-        bootstrapPermissions();
-        permissionRepository.flush();
-
-        bootstrapRolePermissions();
-
-        log.info("IAM permission bootstrap completed");
+            log.info("IAM permission bootstrap completed");
+        } catch (Exception ex) {
+            log.error("IAM permission bootstrap failed. Application will continue.", ex);
+        }
     }
 
     /* ---------- ROLES ---------- */
 
     private void bootstrapRoles() {
+        Instant now = Instant.now();
+
         for (RoleType type : RoleType.values()) {
             roleRepository.findByType(type).orElseGet(() ->
                     roleRepository.save(
                             Role.builder()
+                                    .name(type.name())
                                     .type(type)
                                     .description(defaultRoleDescription(type))
                                     .immutable(true)
-                                    .createdAt(Instant.now())
+                                    .createdAt(now)
                                     .build()
                     )
             );
@@ -58,13 +63,15 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
     /* ---------- PERMISSIONS ---------- */
 
     private void bootstrapPermissions() {
+        Instant now = Instant.now();
+
         for (PermissionType type : PermissionType.values()) {
             permissionRepository.findByType(type).orElseGet(() ->
                     permissionRepository.save(
                             Permission.builder()
                                     .type(type)
                                     .description(defaultPermissionDescription(type))
-                                    .createdAt(Instant.now())
+                                    .createdAt(now)
                                     .build()
                     )
             );
@@ -93,30 +100,53 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
         assignPermissions(owner, EnumSet.allOf(PermissionType.class));
     }
 
-    private void assignPermissions(Role role, Set<PermissionType> types) {
-        for (PermissionType type : types) {
-            Permission permission = permissionRepository.findByType(type)
-                    .orElseThrow(() -> new IllegalStateException("Missing permission: " + type));
+    /**
+     * Idempotent, set-based, race-safe permission assignment.
+     */
+    private void assignPermissions(Role role, Set<PermissionType> desired) {
+        Set<PermissionType> existing =
+                rolePermissionRepository.findPermissionTypesByRole(role);
 
-            if (rolePermissionRepository.existsByRoleAndPermission(role, permission)) {
-                continue;
-            }
+        Set<PermissionType> missing = new HashSet<>(desired);
+        missing.removeAll(existing);
 
-            rolePermissionRepository.save(
-                    RolePermission.builder()
+        if (missing.isEmpty()) {
+            return;
+        }
+
+        Instant now = Instant.now();
+
+        List<RolePermission> toInsert = missing.stream()
+                .map(type -> {
+                    Permission permission = permissionRepository.findByType(type)
+                            .orElseThrow(() ->
+                                    new IllegalStateException("Missing permission: " + type)
+                            );
+
+                    return RolePermission.builder()
                             .role(role)
                             .permission(permission)
-                            .assignedAt(Instant.now())
-                            .build()
-            );
-        }
+                            .assignedAt(now)
+                            .build();
+                })
+                .toList();
+
+        rolePermissionRepository.saveAll(toInsert);
+
+        log.info(
+                "Assigned {} new permissions to role {}",
+                toInsert.size(),
+                role.getType()
+        );
     }
 
     /* ---------- HELPERS ---------- */
 
     private Role requireRole(RoleType type) {
         return roleRepository.findByType(type)
-                .orElseThrow(() -> new IllegalStateException("Missing role: " + type));
+                .orElseThrow(() ->
+                        new IllegalStateException("Missing role: " + type)
+                );
     }
 
     private String defaultRoleDescription(RoleType type) {

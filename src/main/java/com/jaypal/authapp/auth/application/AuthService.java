@@ -212,7 +212,6 @@ public class AuthService {
 
         userRepository.save(user);
         passwordResetTokenRepository.save(token);
-        com.jaypal.authapp.audit.context.AuditContext.setEmail(user.getEmail());
     }
 
     // ---------- INTERNAL ----------

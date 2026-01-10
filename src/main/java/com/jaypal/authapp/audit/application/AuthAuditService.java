@@ -1,16 +1,12 @@
 package com.jaypal.authapp.audit.application;
 
-import com.jaypal.authapp.audit.domain.AuthAuditEvent;
-import com.jaypal.authapp.audit.domain.AuthFailureReason;
+import com.jaypal.authapp.audit.domain.*;
 import com.jaypal.authapp.audit.persistence.AuthAuditLog;
 import com.jaypal.authapp.audit.persistence.AuthAuditRepository;
-import com.jaypal.authapp.audit.validation.AuthAuditMatrix;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -18,55 +14,56 @@ import java.util.UUID;
 public class AuthAuditService {
 
     private final AuthAuditRepository repository;
+    private final AuditFailureMonitor failureMonitor;
 
-    public void log(
-            UUID userId,
-            String subject,
+    @Async("auditExecutor")
+    public void record(
+            AuditCategory category,
             AuthAuditEvent event,
-            String provider,
-            HttpServletRequest request,
-            boolean success,
-            AuthFailureReason failureReason
+            AuditOutcome outcome,
+            AuditSubject subject,
+            AuthFailureReason failureReason,
+            AuthProvider provider,
+            AuditRequestContext context
     ) {
+        enforceInvariants(outcome, failureReason, subject);
+
         try {
-
-            if (!success && !AuthAuditMatrix.isAllowed(event, failureReason)) {
-                failureReason = AuthFailureReason.SYSTEM_ERROR;
-            }
-
-            repository.save(
-                    AuthAuditLog.builder()
-                            .userId(userId)
-                            .subject(subject)
-                            .eventType(event)
-                            .provider(provider)
-                            .success(success)
-                            .failureReason(success ? null : failureReason)
-                            .ipAddress(extractIp(request))
-                            .userAgent(
-                                    request != null
-                                            ? request.getHeader("User-Agent")
-                                            : null
-                            )
-                            .build()
+            AuthAuditLog log = new AuthAuditLog(
+                    category,
+                    event,
+                    outcome,
+                    outcome == AuditOutcome.SUCCESS
+                            ? AuditSeverity.LOW
+                            : failureReason.getSeverity(),
+                    subject,
+                    failureReason,
+                    provider,
+                    context
             );
+
+            repository.save(log);
 
         } catch (Exception ex) {
-            log.error(
-                    "Audit logging failed. event={}, success={}",
-                    event, success, ex
-            );
+            failureMonitor.onAuditFailure(event, ex);
         }
     }
 
-    private String extractIp(HttpServletRequest request) {
-        if (request == null) {
-            return null;
+    private void enforceInvariants(
+            AuditOutcome outcome,
+            AuthFailureReason failureReason,
+            AuditSubject subject
+    ) {
+        if (outcome == AuditOutcome.FAILURE && failureReason == null) {
+            throw new IllegalArgumentException("Failure must include reason");
         }
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+
+        if (outcome == AuditOutcome.SUCCESS && failureReason != null) {
+            throw new IllegalArgumentException("Success must not include reason");
         }
-        return request.getRemoteAddr();
+
+        if (subject == null) {
+            throw new IllegalArgumentException("Audit subject must not be null");
+        }
     }
 }

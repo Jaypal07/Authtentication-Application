@@ -2,6 +2,7 @@ package com.jaypal.authapp.audit.annotation;
 
 import com.jaypal.authapp.audit.domain.AuthAuditEvent;
 import com.jaypal.authapp.audit.domain.AuditSubjectType;
+import com.jaypal.authapp.audit.domain.AuthProvider;
 
 import java.lang.annotation.*;
 
@@ -11,6 +12,9 @@ import java.lang.annotation.*;
 public @interface AuthAudit {
 
     AuthAuditEvent event();
-    String provider() default "LOCAL";
-    AuditSubjectType subject() default AuditSubjectType.NONE;
+
+    AuditSubjectType subject();
+
+    AuthProvider provider() default AuthProvider.LOCAL;
 }
+

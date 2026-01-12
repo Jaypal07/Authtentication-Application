@@ -6,3 +6,11 @@ spring:
     name: Auth-App-Backend
   profiles:
     active: dev
+  management:
+    metrics:
+      export:
+        prometheus:
+          enabled: true
+      tags:
+        application: ${spring.application.name}
+        environment: production

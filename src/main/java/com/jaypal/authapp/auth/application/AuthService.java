@@ -26,13 +26,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class AuthService {
+
+    private static final int MIN_PASSWORD_LENGTH = 8;
+    private static final int MAX_PASSWORD_LENGTH = 128;
+    private static final long PASSWORD_RESET_TTL_SECONDS = 900L;
+
+    private static final Pattern PASSWORD_PATTERN = Pattern.compile(
+            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{" + MIN_PASSWORD_LENGTH + ",}$"
+    );
 
     private final UserRepository userRepository;
     private final RefreshTokenService refreshTokenService;
@@ -46,50 +56,73 @@ public class AuthService {
     private final EmailVerificationService emailVerificationService;
     private final ApplicationEventPublisher eventPublisher;
 
-    // ---------- REGISTER ----------
-
     @Transactional
     public void register(UserCreateRequest request) {
-        User user = userService.createAndReturnDomainUser(request);
+        Objects.requireNonNull(request, "Registration request cannot be null");
+
+        validatePassword(request.password());
+
+        final User user = userService.createAndReturnDomainUser(request);
+
+        log.info("User registered successfully - ID: {}", user.getId());
+
         eventPublisher.publishEvent(new UserRegisteredEvent(user.getId()));
     }
 
-    // ---------- LOGIN ----------
-
-    @Transactional
+    @Transactional(readOnly = true)
     public AuthLoginResult login(AuthPrincipal principal) {
+        Objects.requireNonNull(principal, "Principal cannot be null");
+        Objects.requireNonNull(principal.getUserId(), "User ID cannot be null");
 
-        User user = userRepository.findById(principal.getUserId())
-                .orElseThrow(AuthenticatedUserMissingException::new);
+        final User user = userRepository.findById(principal.getUserId())
+                .orElseThrow(() -> {
+                    log.error("Authenticated user not found in database: {}", principal.getUserId());
+                    return new AuthenticatedUserMissingException();
+                });
+
+        if (!user.isEnabled()) {
+            log.warn("Login attempt for disabled user: {}", user.getId());
+            throw new AuthenticatedUserMissingException();
+        }
+
+        log.info("User logged in successfully - ID: {}", user.getId());
 
         return issueTokens(user);
     }
 
-    // ---------- REFRESH ----------
-
     @Transactional
     public AuthLoginResult refresh(String rawRefreshToken) {
-
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            log.warn("Refresh attempt with null or blank token");
             throw new InvalidRefreshTokenException();
         }
 
-        RefreshToken current =
-                refreshTokenService.validate(rawRefreshToken);
+        if (rawRefreshToken.length() > 500) {
+            log.warn("Refresh token exceeds maximum length");
+            throw new InvalidRefreshTokenException();
+        }
 
-        IssuedRefreshToken next =
-                refreshTokenService.rotate(
-                        current,
-                        jwtService.getRefreshTtlSeconds()
-                );
+        final RefreshToken current = refreshTokenService.validate(rawRefreshToken);
+        final IssuedRefreshToken next = refreshTokenService.rotate(
+                current,
+                jwtService.getRefreshTtlSeconds()
+        );
 
-        UUID userId = current.getUserId();
+        final UUID userId = current.getUserId();
+        final User user = userRepository.findById(userId)
+                .orElseThrow(() -> {
+                    log.error("User not found during token refresh: {}", userId);
+                    return new AuthenticatedUserMissingException();
+                });
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(AuthenticatedUserMissingException::new);
+        if (!user.isEnabled()) {
+            log.warn("Token refresh attempted for disabled user: {}", userId);
+            throw new AuthenticatedUserMissingException();
+        }
 
-        Set<PermissionType> permissions =
-                permissionService.resolvePermissions(userId);
+        final Set<PermissionType> permissions = permissionService.resolvePermissions(userId);
+
+        log.info("Token refreshed successfully - User ID: {}", userId);
 
         return new AuthLoginResult(
                 user,
@@ -99,102 +132,136 @@ public class AuthService {
         );
     }
 
-
-    // ---------- LOGOUT ----------
-
     @Transactional
     public void logout(String rawRefreshToken) {
-
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            log.debug("Logout called with null/blank token - no action taken");
             return;
         }
 
-        refreshTokenService.revoke(rawRefreshToken);
-    }
+        if (rawRefreshToken.length() > 500) {
+            log.warn("Logout attempt with oversized token");
+            return;
+        }
 
-    // ---------- EMAIL ----------
+        try {
+            refreshTokenService.revoke(rawRefreshToken);
+            log.info("User logged out successfully");
+        } catch (Exception ex) {
+            log.warn("Logout revocation failed (token may be invalid): {}", ex.getMessage());
+        }
+    }
 
     @Transactional
     public void verifyEmail(String token) {
+        Objects.requireNonNull(token, "Verification token cannot be null");
+
+        if (token.isBlank()) {
+            throw new VerificationTokenInvalidException();
+        }
+
         emailVerificationService.verifyEmail(token);
     }
 
     @Transactional
     public void resendVerification(String email) {
-        emailVerificationService.resendVerificationToken(email);
-    }
+        Objects.requireNonNull(email, "Email cannot be null");
 
-    // ---------- PASSWORD RESET ----------
+        if (email.isBlank()) {
+            log.warn("Resend verification called with blank email");
+            return;
+        }
+
+        try {
+            emailVerificationService.resendVerificationToken(email);
+        } catch (EmailNotRegisteredException | EmailAlreadyVerifiedException ex) {
+            log.debug("Resend verification silent fail: {}", ex.getClass().getSimpleName());
+        }
+    }
 
     @Transactional
     public void initiatePasswordReset(String email) {
+        Objects.requireNonNull(email, "Email cannot be null");
 
-        userRepository.findByEmail(email).ifPresent(user -> {
+        if (email.isBlank()) {
+            log.debug("Password reset requested with blank email");
+            return;
+        }
 
-            passwordResetTokenRepository
-                    .deleteAllByUser_Id(user.getId());
+        userRepository.findByEmail(email).ifPresentOrElse(
+                user -> {
+                    passwordResetTokenRepository.deleteAllByUser_Id(user.getId());
 
-            String tokenValue = UUID.randomUUID().toString();
-            PasswordResetToken token = PasswordResetToken.builder()
-                    .token(tokenValue)
-                    .user(user)
-                    .expiresAt(Instant.now().plusSeconds(900))
-                    .build();
+                    final String tokenValue = UUID.randomUUID().toString();
+                    final PasswordResetToken token = PasswordResetToken.builder()
+                            .token(tokenValue)
+                            .user(user)
+                            .expiresAt(Instant.now().plusSeconds(PASSWORD_RESET_TTL_SECONDS))
+                            .build();
 
-            passwordResetTokenRepository.save(token);
+                    passwordResetTokenRepository.save(token);
 
-            String link =
-                    frontendProperties.getBaseUrl()
-                            + "/reset-password?token=" + tokenValue;
+                    final String resetLink = String.format(
+                            "%s/reset-password?token=%s",
+                            frontendProperties.getBaseUrl(),
+                            tokenValue
+                    );
 
-            try {
-                emailService.sendPasswordResetEmail(
-                        user.getEmail(),
-                        link
-                );
-            } catch (Exception e) {
-                log.error("Password reset email failed", e);
-            }
-        });
+                    try {
+                        emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+                        log.info("Password reset email sent - User ID: {}", user.getId());
+                    } catch (Exception ex) {
+                        log.error("Password reset email failed - User ID: {}", user.getId(), ex);
+                    }
+                },
+                () -> log.debug("Password reset requested for non-existent email")
+        );
     }
 
     @Transactional
     public void resetPassword(String tokenValue, String rawPassword) {
+        Objects.requireNonNull(tokenValue, "Reset token cannot be null");
+        Objects.requireNonNull(rawPassword, "New password cannot be null");
 
-        if (rawPassword == null || rawPassword.length() < 8) {
-            throw new PasswordPolicyViolationException();
+        if (tokenValue.isBlank()) {
+            throw new PasswordResetTokenInvalidException();
         }
 
-        PasswordResetToken token =
-                passwordResetTokenRepository
-                        .findByToken(tokenValue)
-                        .orElseThrow(PasswordResetTokenInvalidException::new);
+        validatePassword(rawPassword);
 
-        if (token.isUsed()
-                || token.getExpiresAt().isBefore(Instant.now())) {
+        final PasswordResetToken token = passwordResetTokenRepository
+                .findByToken(tokenValue)
+                .orElseThrow(PasswordResetTokenInvalidException::new);
+
+        if (token.isUsed()) {
+            log.warn("Password reset attempted with already-used token");
             throw new PasswordResetTokenExpiredException();
         }
 
-        User user = token.getUser();
+        if (token.getExpiresAt().isBefore(Instant.now())) {
+            log.warn("Password reset attempted with expired token");
+            passwordResetTokenRepository.delete(token);
+            throw new PasswordResetTokenExpiredException();
+        }
+
+        final User user = token.getUser();
         user.changePassword(passwordEncoder.encode(rawPassword));
+        user.bumpPermissionVersion();
         token.setUsed(true);
 
         userRepository.save(user);
         passwordResetTokenRepository.save(token);
+
+        log.info("Password reset successful - User ID: {}", user.getId());
     }
 
-    // ---------- INTERNAL ----------
-
     private AuthLoginResult issueTokens(User user) {
+        final Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
 
-        Set<PermissionType> permissions =
-                permissionService.resolvePermissions(user.getId());
-
-        IssuedRefreshToken refreshToken =
-                refreshTokenService.issue(
-                        user.getId(),
-                        jwtService.getRefreshTtlSeconds()
-                );
+        final IssuedRefreshToken refreshToken = refreshTokenService.issue(
+                user.getId(),
+                jwtService.getRefreshTtlSeconds()
+        );
 
         return new AuthLoginResult(
                 user,
@@ -203,4 +270,48 @@ public class AuthService {
                 refreshToken.expiresAt().getEpochSecond()
         );
     }
+
+    private void validatePassword(String password) {
+        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
+            throw new PasswordPolicyViolationException(
+                    "Password must be at least " + MIN_PASSWORD_LENGTH + " characters"
+            );
+        }
+
+        if (password.length() > MAX_PASSWORD_LENGTH) {
+            throw new PasswordPolicyViolationException(
+                    "Password must not exceed " + MAX_PASSWORD_LENGTH + " characters"
+            );
+        }
+
+        if (!PASSWORD_PATTERN.matcher(password).matches()) {
+            throw new PasswordPolicyViolationException(
+                    "Password must contain uppercase, lowercase, and digit"
+            );
+        }
+
+        if (password.contains(" ")) {
+            throw new PasswordPolicyViolationException(
+                    "Password must not contain spaces"
+            );
+        }
+    }
 }
+
+/*
+CHANGELOG:
+1. Added comprehensive password validation (min/max length, complexity, no spaces)
+2. Added null checks for all public method parameters
+3. Added enabled check during login and refresh to prevent disabled user access
+4. Added token length validation (max 500 chars) to prevent overflow attacks
+5. Changed resendVerification to catch and swallow enumeration exceptions
+6. Added permission version bump on password reset (invalidates existing tokens)
+7. Delete expired reset token on validation failure
+8. Added comprehensive logging for security audit trail
+9. Extracted PASSWORD_RESET_TTL_SECONDS as constant
+10. Used String.format for URL construction instead of concatenation
+11. Changed ifPresent to ifPresentOrElse for better readability
+12. Made login and refresh methods check user.isEnabled()
+13. Added try-catch in logout to prevent exceptions from propagating
+14. Used PASSWORD_PATTERN compiled once instead of inline regex
+*/

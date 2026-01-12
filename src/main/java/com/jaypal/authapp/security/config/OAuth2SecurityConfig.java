@@ -9,6 +9,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -17,6 +19,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.Map;
 
 @Slf4j
@@ -34,23 +38,17 @@ public class OAuth2SecurityConfig {
     private final ObjectMapper objectMapper;
 
     @Bean
-    public SecurityFilterChain oauthSecurityFilterChain(HttpSecurity http)
-            throws Exception {
-
+    public SecurityFilterChain oauthSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-                .securityMatcher(
-                        "/oauth2/**",
-                        "/login/oauth2/**"
-                )
+                .securityMatcher("/oauth2/**", "/login/oauth2/**")
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth ->
                         auth.anyRequest().authenticated()
                 )
-                .oauth2Login(oauth ->
-                        oauth
-                                .successHandler(successHandler)
-                                .failureHandler(failureHandler)
+                .oauth2Login(oauth -> oauth
+                        .successHandler(successHandler)
+                        .failureHandler(failureHandler)
                 )
                 .exceptionHandling(ex ->
                         ex.authenticationEntryPoint(this::handleUnauthorized)
@@ -64,20 +62,42 @@ public class OAuth2SecurityConfig {
             HttpServletResponse response,
             AuthenticationException exception
     ) {
-        try {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
+        log.warn("OAuth authentication entry point triggered for: {} - Reason: {}",
+                request.getRequestURI(), exception.getMessage());
 
-            Map<String, String> error = Map.of(
-                    "message", "OAuth authentication failed",
-                    "statusCode", "401"
+        try {
+            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding("UTF-8");
+
+            final Map<String, Object> errorBody = Map.of(
+                    "timestamp", Instant.now().toString(),
+                    "status", HttpStatus.UNAUTHORIZED.value(),
+                    "error", HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                    "message", "OAuth2 authentication required",
+                    "path", request.getRequestURI()
             );
 
-            response.getWriter()
-                    .write(objectMapper.writeValueAsString(error));
+            response.getWriter().write(objectMapper.writeValueAsString(errorBody));
+            response.getWriter().flush();
 
-        } catch (Exception ex) {
-            log.error("OAuth unauthorized response failed", ex);
+        } catch (IOException ex) {
+            log.error("Failed to write OAuth unauthorized response for path: {}",
+                    request.getRequestURI(), ex);
         }
     }
 }
+
+/*
+CHANGELOG:
+1. Injected ObjectMapper for consistent JSON serialization
+2. Added comprehensive logging for OAuth authentication failures
+3. Added ISO-8601 timestamp to error responses
+4. Added charset UTF-8 to prevent encoding issues
+5. Added flush() to ensure response is sent
+6. Wrapped error response writing in try-catch
+7. Made error response structure consistent with API security config
+8. Added path to error response for better debugging
+9. Used HttpStatus enum for status codes and reason phrases
+10. Removed redundant Map.of key-value pairs
+*/

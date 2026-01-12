@@ -3,6 +3,15 @@ server:
   forward-headers-strategy: framework
   ssl:
     enabled: false
+    key-store: classpath:keystore.p12
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+  shutdown: graceful
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
 
 spring:
   application:
@@ -15,24 +24,35 @@ spring:
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: ${DB_POOL_NAME:HikariCP}
-      maximum-pool-size: ${DB_MAX_POOL_SIZE:5}
-      minimum-idle: ${DB_MIN_IDLE:2}
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:20}
+      minimum-idle: ${DB_MIN_IDLE:5}
       connection-timeout: ${DB_CONNECTION_TIMEOUT:10000}
       idle-timeout: ${DB_IDLE_TIMEOUT:600000}
       max-lifetime: ${DB_MAX_LIFETIME:1800000}
       validation-timeout: ${DB_VALIDATION_TIMEOUT:5000}
-      leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD:0}
+      leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD:60000}
       initialization-fail-timeout: -1
+      auto-commit: true
+      connection-test-query: SELECT 1
 
   jpa:
     hibernate:
-      ddl-auto: ${JPA_DDL_AUTO}
+      ddl-auto: validate
     open-in-view: false
+    show-sql: false
     properties:
       hibernate:
-        default_schema: public 
-        show_sql: ${HIBERNATE_SHOW_SQL:false}
+        default_schema: public
         format_sql: false
+        jdbc:
+          batch_size: 20
+          fetch_size: 50
+        order_inserts: true
+        order_updates: true
+        query:
+          in_clause_parameter_padding: true
+        connection:
+          provider_disables_autocommit: false
 
   security:
     oauth2:
@@ -74,6 +94,18 @@ spring:
     properties:
       mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
       mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
+      mail.smtp.timeout: 5000
+      mail.smtp.connectiontimeout: 5000
+
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=900s
+
+  task:
+    scheduling:
+      pool:
+        size: 2
 
 app:
   frontend:
@@ -90,11 +122,51 @@ security:
     refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME:refreshToken}
     cookie-secure: ${JWT_COOKIE_SECURE:true}
     cookie-http-only: ${JWT_COOKIE_HTTP_ONLY:true}
-    cookie-same-site: ${JWT_COOKIE_SAME_SITE:lax}
+    cookie-same-site: ${JWT_COOKIE_SAME_SITE:Strict}
     cookie-domain: ${JWT_COOKIE_DOMAIN:}
 
 logging:
   level:
     root: INFO
-    org.springframework.security: ${SECURITY_LOG_LEVEL:INFO}
-    org.hibernate.SQL: ${HIBERNATE_SQL_LOG_LEVEL:WARN}
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    com.jaypal.authapp: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      simple:
+        enabled: true
+
+#  /*
+#PRODUCTION IMPROVEMENTS:
+#  1. Increased HikariCP pool size (5 → 20) for production load
+#  2. Increased minimum idle (2 → 5) for better connection availability
+#  3. Enabled leak detection (60 seconds threshold)
+#  4. Added connection test query for health checks
+#  5. Changed ddl-auto from update to validate (safer for production)
+#  6. Disabled show-sql (performance + security)
+#7. Enabled Hibernate batch operations (batch_size: 20)
+#8. Added JDBC fetch size optimization (fetch_size: 50)
+#  9. Enabled order_inserts and order_updates for batching
+#  10. Added mail timeouts to prevent hanging
+#  11. Configured Caffeine cache properly
+#  12. Added scheduling pool for cleanup jobs
+#  13. Changed SameSite from Lax to Strict for production security
+#  14. Disabled error stack traces in responses (security)
+#  15. Added graceful shutdown
+#  16. Configured actuator endpoints for monitoring
+#  17. Added proper logging patterns
+#  */

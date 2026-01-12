@@ -8,13 +8,12 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.authentication.*;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
@@ -31,10 +30,7 @@ import java.util.UUID;
 public class GlobalExceptionHandler {
 
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
-
-    // ---------------------------------------------------------
-    // RFC 7807 RESPONSE BUILDER
-    // ---------------------------------------------------------
+    private static final String TYPE_ABOUT_BLANK = "about:blank";
 
     private ResponseEntity<Map<String, Object>> problem(
             HttpStatus status,
@@ -42,20 +38,19 @@ public class GlobalExceptionHandler {
             String detail,
             WebRequest request,
             String logMessage,
-            Throwable ex,
             boolean logStackTrace
     ) {
-        String correlationId = UUID.randomUUID().toString();
-        String path = extractPath(request);
+        final String correlationId = UUID.randomUUID().toString();
+        final String path = extractPath(request);
 
         if (logStackTrace) {
-            log.error("{} | correlationId={}", logMessage, correlationId, ex);
+            log.error("{} | correlationId={} | path={}", logMessage, correlationId, path);
         } else {
-            log.warn("{} | correlationId={}", logMessage, correlationId);
+            log.warn("{} | correlationId={} | path={}", logMessage, correlationId, path);
         }
 
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create("about:blank"));
+        final Map<String, Object> body = new HashMap<>();
+        body.put("type", URI.create(TYPE_ABOUT_BLANK));
         body.put("title", title);
         body.put("status", status.value());
         body.put("detail", detail);
@@ -76,10 +71,6 @@ public class GlobalExceptionHandler {
         return "N/A";
     }
 
-    // ---------------------------------------------------------
-    // AUTHENTICATION
-    // ---------------------------------------------------------
-
     @ExceptionHandler({
             BadCredentialsException.class,
             InvalidCredentialsException.class,
@@ -92,10 +83,9 @@ public class GlobalExceptionHandler {
         return problem(
                 HttpStatus.UNAUTHORIZED,
                 "Authentication failed",
-                "Invalid username or password.",
+                "Invalid email or password.",
                 request,
                 "Authentication failure: invalid credentials",
-                ex,
                 false
         );
     }
@@ -114,7 +104,6 @@ public class GlobalExceptionHandler {
                 "Please verify your email address before logging in.",
                 request,
                 "Authentication failure: account disabled",
-                ex,
                 false
         );
     }
@@ -130,7 +119,6 @@ public class GlobalExceptionHandler {
                 "Your account is locked. Please contact support.",
                 request,
                 "Authentication failure: account locked",
-                ex,
                 false
         );
     }
@@ -145,15 +133,10 @@ public class GlobalExceptionHandler {
                 "Authentication context invalid",
                 "Authentication state is no longer valid. Please log in again.",
                 request,
-                "Authenticated user missing",
-                ex,
+                "Authenticated user missing from database",
                 true
         );
     }
-
-    // ---------------------------------------------------------
-    // AUTHORIZATION
-    // ---------------------------------------------------------
 
     @ExceptionHandler({
             AccessDeniedException.class,
@@ -168,15 +151,10 @@ public class GlobalExceptionHandler {
                 "Access denied",
                 "You do not have permission to access this resource.",
                 request,
-                "Authorization failure",
-                ex,
+                "Authorization failure: " + ex.getClass().getSimpleName(),
                 false
         );
     }
-
-    // ---------------------------------------------------------
-    // EMAIL / VERIFICATION
-    // ---------------------------------------------------------
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
     public ResponseEntity<Map<String, Object>> handleEmailAlreadyExists(
@@ -188,8 +166,7 @@ public class GlobalExceptionHandler {
                 "Email already exists",
                 ex.getMessage(),
                 request,
-                "Duplicate email",
-                ex,
+                "Duplicate email registration attempt",
                 false
         );
     }
@@ -200,12 +177,11 @@ public class GlobalExceptionHandler {
             WebRequest request
     ) {
         return problem(
-                HttpStatus.CONFLICT,
-                "Account already verified",
+                HttpStatus.OK,
+                "Email already verified",
                 "This email address is already verified.",
                 request,
-                "Account already verified",
-                ex,
+                "Email verification for already-verified account",
                 false
         );
     }
@@ -223,20 +199,16 @@ public class GlobalExceptionHandler {
                 "Verification failed",
                 ex.getMessage(),
                 request,
-                "Email verification failure",
-                ex,
+                "Email verification failure: " + ex.getClass().getSimpleName(),
                 false
         );
     }
 
     @ExceptionHandler(EmailNotRegisteredException.class)
     public ResponseEntity<Void> swallowEmailNotRegistered() {
-        return ResponseEntity.noContent().build();
+        log.debug("Email verification resend for non-existent email - responding with success");
+        return ResponseEntity.ok().build();
     }
-
-    // ---------------------------------------------------------
-    // PASSWORD RESET
-    // ---------------------------------------------------------
 
     @ExceptionHandler({
             PasswordPolicyViolationException.class,
@@ -252,15 +224,10 @@ public class GlobalExceptionHandler {
                 "Password operation failed",
                 ex.getMessage(),
                 request,
-                "Password operation failure",
-                ex,
+                "Password operation failure: " + ex.getClass().getSimpleName(),
                 false
         );
     }
-
-    // ---------------------------------------------------------
-    // REFRESH TOKEN
-    // ---------------------------------------------------------
 
     @ExceptionHandler({
             RefreshTokenExpiredException.class,
@@ -281,55 +248,64 @@ public class GlobalExceptionHandler {
                 "Your session has expired. Please log in again.",
                 request,
                 "Refresh token failure: " + ex.getClass().getSimpleName(),
-                ex,
                 false
         );
     }
 
-    // ---------------------------------------------------------
-    // VALIDATION
-    // ---------------------------------------------------------
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFound(
+            ResourceNotFoundException ex,
+            WebRequest request
+    ) {
+        return problem(
+                HttpStatus.NOT_FOUND,
+                "Resource not found",
+                ex.getMessage(),
+                request,
+                "Resource not found",
+                false
+        );
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(
             MethodArgumentNotValidException ex,
             WebRequest request
     ) {
-        Map<String, String> errors = new HashMap<>();
+        final Map<String, String> errors = new HashMap<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
             errors.put(error.getField(), error.getDefaultMessage());
         }
 
-        return problem(
-                HttpStatus.BAD_REQUEST,
-                "Validation failed",
-                errors.toString(),
-                request,
-                "Validation failure",
-                ex,
-                false
-        );
-    }
+        final Map<String, Object> body = new HashMap<>();
+        body.put("type", URI.create(TYPE_ABOUT_BLANK));
+        body.put("title", "Validation failed");
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("detail", "Request validation failed");
+        body.put("errors", errors);
+        body.put("instance", extractPath(request));
+        body.put("timestamp", Instant.now().toString());
 
-    // ---------------------------------------------------------
-    // DATA INTEGRITY
-    // ---------------------------------------------------------
+        log.warn("Validation failure | path={} | errors={}", extractPath(request), errors.size());
+
+        return ResponseEntity.badRequest().body(body);
+    }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrity(
             DataIntegrityViolationException ex,
             WebRequest request
     ) {
-        Throwable cause = ex.getCause();
+        final Throwable cause = ex.getCause();
         if (cause instanceof org.hibernate.exception.ConstraintViolationException cve) {
-            if ("users_email".equalsIgnoreCase(cve.getConstraintName())) {
+            if (cve.getConstraintName() != null &&
+                    cve.getConstraintName().toLowerCase().contains("email")) {
                 return problem(
                         HttpStatus.CONFLICT,
                         "Email already exists",
                         "An account with this email address already exists.",
                         request,
                         "Duplicate email constraint violation",
-                        ex,
                         false
                 );
             }
@@ -340,30 +316,23 @@ public class GlobalExceptionHandler {
                 "Invalid request",
                 "Request violates data constraints.",
                 request,
-                "Unhandled data integrity violation",
-                ex,
-                false
+                "Data integrity violation: " + (cause != null ? cause.getClass().getSimpleName() : "unknown"),
+                true
         );
     }
 
-    // ---------------------------------------------------------
-    // FALLBACK
-    // ---------------------------------------------------------
-
     @ExceptionHandler(NoResourceFoundException.class)
-    @ResponseStatus(HttpStatus.NOT_FOUND)
     public ResponseEntity<Map<String, Object>> handleNoResource(
-            Exception ex,
+            NoResourceFoundException ex,
             WebRequest request
     ) {
         return problem(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "Internal server error",
-                "Resource not found.",
+                HttpStatus.NOT_FOUND,
+                "Resource not found",
+                "The requested resource was not found.",
                 request,
-                "Unhandled exception",
-                ex,
-                true
+                "404 Not Found",
+                false
         );
     }
 
@@ -375,11 +344,24 @@ public class GlobalExceptionHandler {
         return problem(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Internal server error",
-                "An unexpected error occurred.",
+                "An unexpected error occurred. Please contact support if the problem persists.",
                 request,
-                "Unhandled exception",
-                ex,
+                "Unhandled exception: " + ex.getClass().getSimpleName(),
                 true
         );
     }
 }
+
+/*
+CHANGELOG:
+1. Removed PII (exception details) from logs - only log exception class name
+2. Changed EmailAlreadyVerified status to 200 OK (not an error)
+3. Added ResourceNotFoundException handler
+4. Improved validation error response structure
+5. Added better constraint name matching for data integrity violations
+6. Extracted TYPE_ABOUT_BLANK as constant
+7. Removed unnecessary exception parameter from problem() method
+8. Added path to all log statements
+9. Made log messages more consistent
+10. Improved email enumeration protection in swallowEmailNotRegistered
+*/

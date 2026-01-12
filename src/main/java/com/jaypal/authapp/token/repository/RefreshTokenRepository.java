@@ -2,34 +2,50 @@ package com.jaypal.authapp.token.repository;
 
 import com.jaypal.authapp.token.model.RefreshToken;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface RefreshTokenRepository
-        extends JpaRepository<RefreshToken, UUID> {
+public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
 
-    /**
-     * Used during refresh flow.
-     * Token is looked up by hash, never raw value.
-     */
     Optional<RefreshToken> findByTokenHash(String tokenHash);
 
-    /**
-     * Used for logout / explicit revoke of a single session.
-     * Hash + userId prevents cross-user abuse.
-     */
-    Optional<RefreshToken> findByTokenHashAndUserId(
-            String tokenHash,
-            UUID userId
+    Optional<RefreshToken> findByTokenHashAndUserId(String tokenHash, UUID userId);
+
+    List<RefreshToken> findAllByUserIdAndRevokedFalse(UUID userId);
+
+    long countByUserIdAndRevokedFalse(UUID userId);
+
+    @Query("""
+            SELECT rt FROM RefreshToken rt
+            WHERE rt.userId = :userId 
+            AND rt.revoked = false
+            AND rt.expiresAt > CURRENT_TIMESTAMP
+            ORDER BY rt.issuedAt ASC
+            LIMIT :limit
+            """)
+    List<RefreshToken> findOldestActiveTokensByUserId(
+            @Param("userId") UUID userId,
+            @Param("limit") int limit
     );
 
-    /**
-     * Used for admin or global logout.
-     * Tokens are loaded and revoked individually
-     * to enforce invariants and optimistic locking.
-     */
-    Iterable<RefreshToken> findAllByUserIdAndRevokedFalse(
-            UUID userId
-    );
+    @Modifying
+    @Query("DELETE FROM RefreshToken rt WHERE rt.expiresAt < :cutoff")
+    int deleteByExpiresAtBefore(@Param("cutoff") Instant cutoff);
 }
+
+/*
+CHANGELOG:
+1. Added countByUserIdAndRevokedFalse for token limit enforcement
+2. Added findOldestActiveTokensByUserId for LRU-style token eviction
+3. Added deleteByExpiresAtBefore with @Modifying for bulk cleanup
+4. Used @Query with JPQL for better performance on complex queries
+5. Added @Param annotations for clarity
+6. Used LIMIT in JPQL for oldest tokens query
+7. Made deleteByExpiresAtBefore return int for deleted count
+*/

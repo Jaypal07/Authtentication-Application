@@ -1,9 +1,9 @@
 package com.jaypal.authapp.oauth.handler;
 
-import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.auth.infrastructure.cookie.CookieService;
-import com.jaypal.authapp.oauth.dto.OAuthLoginResult;
+import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.oauth.application.OAuthLoginService;
+import com.jaypal.authapp.oauth.dto.OAuthLoginResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,7 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
-    private static final String INVALID_AUTH_TYPE_MESSAGE = "Authentication is not an OAuth2AuthenticationToken";
+    private static final long MAX_COOKIE_TTL = Integer.MAX_VALUE;
 
     private final OAuthLoginService oauthLoginService;
     private final CookieService cookieService;
@@ -34,48 +34,116 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             Authentication authentication
     ) throws IOException {
 
-        final OAuth2AuthenticationToken oauthToken = extractOAuthToken(authentication);
+        try {
+            final OAuth2AuthenticationToken oauthToken = validateAndExtractToken(authentication);
+            final OAuthLoginResult loginResult = oauthLoginService.login(oauthToken);
 
-        final OAuthLoginResult loginResult = oauthLoginService.login(oauthToken);
-        validateLoginResult(loginResult);
+            validateLoginResult(loginResult);
+            attachSecurityArtifacts(response, loginResult);
 
-        attachSecurityArtifacts(response, loginResult);
+            final String redirectUrl = getSuccessRedirectUrl();
 
-        final String redirectUrl = frontendProperties.getSuccessRedirect();
-        Objects.requireNonNull(redirectUrl, "Frontend success redirect must be configured");
+            log.info("OAuth2 authentication successful - redirecting to: {}", redirectUrl);
 
-        log.debug("OAuth2 login successful. Redirecting to {}", redirectUrl);
-        response.sendRedirect(redirectUrl);
+            response.sendRedirect(redirectUrl);
+
+        } catch (Exception ex) {
+            log.error("OAuth2 success handler failed", ex);
+            handleFailure(response, ex);
+        }
     }
 
-    private OAuth2AuthenticationToken extractOAuthToken(Authentication authentication) {
+    private OAuth2AuthenticationToken validateAndExtractToken(Authentication authentication) {
+        Objects.requireNonNull(authentication, "Authentication cannot be null");
+
         if (!(authentication instanceof OAuth2AuthenticationToken token)) {
-            log.error("OAuth2 success handler invoked with invalid authentication type: {}",
-                    authentication != null ? authentication.getClass().getName() : "null");
-            throw new IllegalStateException(INVALID_AUTH_TYPE_MESSAGE);
+            final String actualType = authentication.getClass().getSimpleName();
+            log.error("OAuth2 success handler invoked with invalid authentication type: {}", actualType);
+            throw new IllegalStateException(
+                    "Expected OAuth2AuthenticationToken but got: " + actualType);
         }
+
+        if (token.getPrincipal() == null) {
+            log.error("OAuth2 authentication token has null principal");
+            throw new IllegalStateException("OAuth2 token principal is null");
+        }
+
+        if (token.getPrincipal().getAttributes() == null ||
+                token.getPrincipal().getAttributes().isEmpty()) {
+            log.error("OAuth2 principal has no attributes");
+            throw new IllegalStateException("OAuth2 principal attributes are missing");
+        }
+
         return token;
     }
 
     private void validateLoginResult(OAuthLoginResult result) {
-        Objects.requireNonNull(result, "OAuthLoginResult must not be null");
-        Objects.requireNonNull(result.refreshToken(), "Refresh token must not be null");
+        Objects.requireNonNull(result, "OAuth login result cannot be null");
+        Objects.requireNonNull(result.accessToken(), "Access token cannot be null");
+        Objects.requireNonNull(result.refreshToken(), "Refresh token cannot be null");
+
+        if (result.accessToken().isBlank()) {
+            throw new IllegalStateException("Access token is blank");
+        }
+
+        if (result.refreshToken().isBlank()) {
+            throw new IllegalStateException("Refresh token is blank");
+        }
 
         if (result.refreshTtlSeconds() <= 0) {
-            throw new IllegalStateException("Invalid refresh token TTL");
+            throw new IllegalStateException("Invalid refresh token TTL: " + result.refreshTtlSeconds());
+        }
+
+        if (result.refreshTtlSeconds() > MAX_COOKIE_TTL) {
+            log.warn("Refresh token TTL exceeds max cookie age: {}", result.refreshTtlSeconds());
         }
     }
 
-    private void attachSecurityArtifacts(
-            HttpServletResponse response,
-            OAuthLoginResult result
-    ) {
-        cookieService.attachRefreshCookie(
-                response,
-                result.refreshToken(),
-                Math.toIntExact(result.refreshTtlSeconds())
-        );
+    private void attachSecurityArtifacts(HttpServletResponse response, OAuthLoginResult result) {
+        final int refreshTtl = result.refreshTtlSeconds() > MAX_COOKIE_TTL
+                ? Integer.MAX_VALUE
+                : (int) result.refreshTtlSeconds();
 
+        cookieService.attachRefreshCookie(response, result.refreshToken(), refreshTtl);
         cookieService.addNoStoreHeader(response);
     }
+
+    private String getSuccessRedirectUrl() {
+        final String redirectUrl = frontendProperties.getSuccessRedirect();
+
+        if (redirectUrl == null || redirectUrl.isBlank()) {
+            throw new IllegalStateException(
+                    "Frontend success redirect URL is not configured. Set 'app.frontend.success-redirect'");
+        }
+
+        return redirectUrl;
+    }
+
+    private void handleFailure(HttpServletResponse response, Exception ex) throws IOException {
+        final String failureUrl = frontendProperties.getFailureRedirect();
+
+        if (failureUrl != null && !failureUrl.isBlank()) {
+            log.warn("Redirecting to failure URL after OAuth error: {}", failureUrl);
+            response.sendRedirect(failureUrl);
+        } else {
+            log.error("No failure redirect URL configured - returning 500");
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+                    "OAuth authentication processing failed");
+        }
+    }
 }
+
+/*
+CHANGELOG:
+1. CRITICAL FIX: Removed Math.toIntExact (throws on overflow) - now caps at Integer.MAX_VALUE
+2. Added comprehensive validation of OAuth token and principal
+3. Added try-catch to handle failures gracefully
+4. Added validation for access token (not just refresh token)
+5. Added blank checks for tokens
+6. Added MAX_COOKIE_TTL constant
+7. Extracted URL retrieval with validation
+8. Added fallback error handling if login service fails
+9. Improved error messages with actual values
+10. Added null checks for all critical paths
+11. Made logging more informative
+*/

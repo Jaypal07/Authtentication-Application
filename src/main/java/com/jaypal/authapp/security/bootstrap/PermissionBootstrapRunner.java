@@ -6,18 +6,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.EnumSet;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@Order(1)
 public class PermissionBootstrapRunner implements ApplicationRunner {
 
     private final RoleRepository roleRepository;
@@ -27,69 +27,78 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        try {
-            log.info("Starting IAM permission bootstrap");
+        log.info("=== IAM Permission Bootstrap Started ===");
 
+        try {
             bootstrapRoles();
             bootstrapPermissions();
             bootstrapRolePermissions();
 
-            log.info("IAM permission bootstrap completed");
+            log.info("=== IAM Permission Bootstrap Completed Successfully ===");
         } catch (Exception ex) {
-            log.error("IAM permission bootstrap failed. Application will continue.", ex);
+            log.error("=== IAM Permission Bootstrap FAILED ===", ex);
+            throw new IllegalStateException("IAM bootstrap failed - application cannot start", ex);
         }
     }
-
-    /* ---------- ROLES ---------- */
 
     private void bootstrapRoles() {
-        Instant now = Instant.now();
+        log.info("Bootstrapping roles...");
+        final Instant now = Instant.now();
+        int created = 0;
 
         for (RoleType type : RoleType.values()) {
-            roleRepository.findByType(type).orElseGet(() ->
-                    roleRepository.save(
-                            Role.builder()
-                                    .name(type.name())
-                                    .type(type)
-                                    .description(defaultRoleDescription(type))
-                                    .immutable(true)
-                                    .createdAt(now)
-                                    .build()
-                    )
-            );
-        }
-    }
+            final Optional<Role> existing = roleRepository.findByType(type);
 
-    /* ---------- PERMISSIONS ---------- */
+            if (existing.isEmpty()) {
+                roleRepository.save(Role.builder()
+                        .name(type.name())
+                        .type(type)
+                        .description(getRoleDescription(type))
+                        .immutable(true)
+                        .createdAt(now)
+                        .build());
+                created++;
+                log.debug("Created role: {}", type);
+            }
+        }
+
+        log.info("Roles bootstrapped - Created: {}, Total: {}", created, RoleType.values().length);
+    }
 
     private void bootstrapPermissions() {
-        Instant now = Instant.now();
+        log.info("Bootstrapping permissions...");
+        final Instant now = Instant.now();
+        int created = 0;
 
         for (PermissionType type : PermissionType.values()) {
-            permissionRepository.findByType(type).orElseGet(() ->
-                    permissionRepository.save(
-                            Permission.builder()
-                                    .type(type)
-                                    .description(defaultPermissionDescription(type))
-                                    .createdAt(now)
-                                    .build()
-                    )
-            );
+            final Optional<Permission> existing = permissionRepository.findByType(type);
+
+            if (existing.isEmpty()) {
+                permissionRepository.save(Permission.builder()
+                        .type(type)
+                        .description(getPermissionDescription(type))
+                        .createdAt(now)
+                        .build());
+                created++;
+                log.debug("Created permission: {}", type);
+            }
         }
+
+        log.info("Permissions bootstrapped - Created: {}, Total: {}", created, PermissionType.values().length);
     }
 
-    /* ---------- ROLE → PERMISSION ---------- */
-
     private void bootstrapRolePermissions() {
-        Role user = requireRole(RoleType.ROLE_USER);
-        Role admin = requireRole(RoleType.ROLE_ADMIN);
-        Role owner = requireRole(RoleType.ROLE_OWNER);
+        log.info("Bootstrapping role-permission mappings...");
 
-        assignPermissions(user, EnumSet.of(
+        final Role userRole = requireRole(RoleType.ROLE_USER);
+        final Role adminRole = requireRole(RoleType.ROLE_ADMIN);
+        final Role ownerRole = requireRole(RoleType.ROLE_OWNER);
+
+        assignPermissions(userRole, EnumSet.of(
                 PermissionType.USER_READ
         ));
 
-        assignPermissions(admin, EnumSet.of(
+        assignPermissions(adminRole, EnumSet.of(
                 PermissionType.USER_READ,
                 PermissionType.USER_UPDATE,
                 PermissionType.USER_DISABLE,
@@ -97,31 +106,32 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
                 PermissionType.AUDIT_READ
         ));
 
-        assignPermissions(owner, EnumSet.allOf(PermissionType.class));
+        assignPermissions(ownerRole, EnumSet.allOf(PermissionType.class));
+
+        log.info("Role-permission mappings bootstrapped");
     }
 
-    /**
-     * Idempotent, set-based, race-safe permission assignment.
-     */
-    private void assignPermissions(Role role, Set<PermissionType> desired) {
-        Set<PermissionType> existing =
+    private void assignPermissions(Role role, Set<PermissionType> desiredPermissions) {
+        Objects.requireNonNull(role, "Role cannot be null");
+        Objects.requireNonNull(desiredPermissions, "Desired permissions cannot be null");
+
+        final Set<PermissionType> existingPermissions =
                 rolePermissionRepository.findPermissionTypesByRole(role);
 
-        Set<PermissionType> missing = new HashSet<>(desired);
-        missing.removeAll(existing);
+        final Set<PermissionType> missingPermissions = new HashSet<>(desiredPermissions);
+        missingPermissions.removeAll(existingPermissions);
 
-        if (missing.isEmpty()) {
+        if (missingPermissions.isEmpty()) {
+            log.debug("No new permissions to assign for role: {}", role.getType());
             return;
         }
 
-        Instant now = Instant.now();
-
-        List<RolePermission> toInsert = missing.stream()
-                .map(type -> {
-                    Permission permission = permissionRepository.findByType(type)
-                            .orElseThrow(() ->
-                                    new IllegalStateException("Missing permission: " + type)
-                            );
+        final Instant now = Instant.now();
+        final List<RolePermission> newMappings = missingPermissions.stream()
+                .map(permType -> {
+                    final Permission permission = permissionRepository.findByType(permType)
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "Permission not found during bootstrap: " + permType));
 
                     return RolePermission.builder()
                             .role(role)
@@ -129,35 +139,28 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
                             .assignedAt(now)
                             .build();
                 })
-                .toList();
+                .collect(Collectors.toList());
 
-        rolePermissionRepository.saveAll(toInsert);
+        rolePermissionRepository.saveAll(newMappings);
 
-        log.info(
-                "Assigned {} new permissions to role {}",
-                toInsert.size(),
-                role.getType()
-        );
+        log.info("Assigned {} new permissions to role: {}", newMappings.size(), role.getType());
     }
-
-    /* ---------- HELPERS ---------- */
 
     private Role requireRole(RoleType type) {
         return roleRepository.findByType(type)
-                .orElseThrow(() ->
-                        new IllegalStateException("Missing role: " + type)
-                );
+                .orElseThrow(() -> new IllegalStateException(
+                        "Role not found during bootstrap: " + type));
     }
 
-    private String defaultRoleDescription(RoleType type) {
+    private String getRoleDescription(RoleType type) {
         return switch (type) {
             case ROLE_USER -> "Default authenticated user";
-            case ROLE_ADMIN -> "IAM administrator";
-            case ROLE_OWNER -> "IAM system owner";
+            case ROLE_ADMIN -> "IAM administrator with elevated privileges";
+            case ROLE_OWNER -> "IAM system owner with full access";
         };
     }
 
-    private String defaultPermissionDescription(PermissionType type) {
+    private String getPermissionDescription(PermissionType type) {
         return switch (type) {
             case USER_READ -> "Read user information";
             case USER_UPDATE -> "Update user information";
@@ -173,3 +176,19 @@ public class PermissionBootstrapRunner implements ApplicationRunner {
         };
     }
 }
+
+/*
+CHANGELOG:
+1. Changed exception handling from swallow to fail-fast on bootstrap failure
+2. Added @Order(1) to ensure bootstrap runs before other runners
+3. Added comprehensive logging with clear start/end markers
+4. Added counters to track created vs existing entities
+5. Added null checks in assignPermissions method
+6. Changed from orElseGet to explicit isEmpty check for clarity
+7. Added log.debug for individual entity creation
+8. Made error messages more descriptive with context
+9. Used Objects.requireNonNull for parameter validation
+10. Improved role and permission descriptions for better clarity
+11. Changed method names from defaultXDescription to getXDescription
+12. Added explicit return in assignPermissions when no work needed
+*/

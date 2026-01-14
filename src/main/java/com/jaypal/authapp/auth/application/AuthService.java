@@ -65,7 +65,7 @@ public class AuthService {
         eventPublisher.publishEvent(new UserRegisteredEvent(user.getId()));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional()
     public AuthLoginResult login(AuthPrincipal principal) {
         Objects.requireNonNull(principal, "Principal cannot be null");
         Objects.requireNonNull(principal.getUserId(), "User ID cannot be null");
@@ -92,7 +92,7 @@ public class AuthService {
 
         final RefreshToken current = refreshTokenService.validate(rawRefreshToken);
         final IssuedRefreshToken next = refreshTokenService.rotate(
-                current,
+                current.getId(),
                 jwtService.getRefreshTtlSeconds()
         );
 
@@ -163,58 +163,61 @@ public class AuthService {
         emailVerificationService.verifyEmail(token);
     }
 
-    @Transactional
     public void resendVerification(String email) {
 
         if (email == null || email.isBlank()) {
             log.warn("Resend verification called with blank email");
             return;
         }
-
-        try {
-            emailVerificationService.resendVerificationToken(email);
-        } catch (EmailNotRegisteredException | EmailAlreadyVerifiedException ex) {
-            log.debug("Resend verification silent fail: {}", ex.getClass().getSimpleName());
-        }
+        emailVerificationService.resendVerificationToken(email);
     }
 
     @Transactional
     public void initiatePasswordReset(String email) {
 
-        if (email == null || email.isBlank()) {
-            log.debug("Password reset requested with null or blank email");
-            return;
-        }
+        userRepository.findByEmail(email).ifPresentOrElse(user -> {
 
-        userRepository.findByEmail(email).ifPresentOrElse(
-                user -> {
-                    passwordResetTokenRepository.deleteAllByUser_Id(user.getId());
+            if (!user.isEnabled()) {
+                log.warn("Password reset requested for disabled user: userId={}", user.getId());
+                return;
+            }
 
-                    final String tokenValue = UUID.randomUUID().toString();
-                    final PasswordResetToken token = PasswordResetToken.builder()
-                            .token(tokenValue)
-                            .user(user)
-                            .expiresAt(Instant.now().plusSeconds(PASSWORD_RESET_TTL_SECONDS))
-                            .build();
+            if (!user.isEmailVerified()) {
+                log.warn("Password reset requested for unverified email: userId={}", user.getId());
+                return;
+            }
 
-                    passwordResetTokenRepository.save(token);
+            passwordResetTokenRepository.deleteAllByUser_Id(user.getId());
 
-                    final String resetLink = String.format(
-                            "%s/reset-password?token=%s",
-                            frontendProperties.getBaseUrl(),
-                            tokenValue
-                    );
+            String tokenValue = UUID.randomUUID().toString();
 
-                    try {
-                        emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
-                        log.debug("Password reset email sent - User ID: {}", user.getId());
-                    } catch (Exception ex) {
-                        log.error("Password reset email failed - User ID: {}", user.getId(), ex);
-                    }
-                },
-                () -> log.debug("Password reset requested for non-existent email")
-        );
+            PasswordResetToken token = PasswordResetToken.builder()
+                    .token(tokenValue)
+                    .user(user)
+                    .expiresAt(Instant.now().plusSeconds(PASSWORD_RESET_TTL_SECONDS))
+                    .build();
+
+            passwordResetTokenRepository.save(token);
+
+            String resetLink = frontendProperties.getBaseUrl()
+                    + "/reset-password?token=" + tokenValue;
+
+            try {
+                emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+                log.info("Password reset email sent - userId={}", user.getId());
+            } catch (Exception ex) {
+                log.error("Password reset email failed - userId={}", user.getId(), ex);
+            }
+
+        }, () -> {
+            // Important: DEBUG only, no email value to avoid PII leakage
+            log.debug("Password reset requested for non-existent email");
+        });
+
+        // Always exit silently (prevents user enumeration)
     }
+
+
 
     @Transactional
     public void resetPassword(String tokenValue, String rawPassword) {

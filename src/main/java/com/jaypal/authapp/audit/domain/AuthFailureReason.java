@@ -25,6 +25,7 @@ public enum AuthFailureReason {
     ACCESS_DENIED(AuditSeverity.MEDIUM),
 
     PASSWORD_POLICY_VIOLATION(AuditSeverity.MEDIUM),
+    RATE_LIMIT_EXCEEDED(AuditSeverity.MEDIUM),
 
     SYSTEM_ERROR(AuditSeverity.CRITICAL);
 

@@ -67,8 +67,7 @@ public class AuthController {
 
     @AuthAudit(
             event = AuthAuditEvent.EMAIL_VERIFY,
-            subject = AuditSubjectType.EMAIL,
-            subjectParam = "token"
+            subject = AuditSubjectType.USER_ID
     )
     @GetMapping("/email-verify")
     public ResponseEntity<Map<String, String>> verifyEmail(
@@ -90,6 +89,7 @@ public class AuthController {
         ));
     }
 
+
     @AuthAudit(
             event = AuthAuditEvent.EMAIL_VERIFICATION_RESEND,
             subject = AuditSubjectType.EMAIL,
@@ -99,7 +99,7 @@ public class AuthController {
     public ResponseEntity<Map<String, String>> resendVerification(
             @RequestBody @Valid ResendVerificationRequest request
     ) {
-        authService.resendVerification(request.email());
+        authService.resendVerification(request.email().toLowerCase().trim());
 
         return ResponseEntity.ok(Map.of(
                 "message", "If your email is registered and unverified, a new verification email has been sent.",
@@ -200,7 +200,7 @@ public class AuthController {
     public ResponseEntity<Map<String, String>> forgotPassword(
             @RequestBody @Valid ForgotPasswordRequest request
     ) {
-        authService.initiatePasswordReset(request.email());
+        authService.initiatePasswordReset(request.email().toLowerCase().trim());
 
         return ResponseEntity.ok(Map.of(
                 "message", "If your email is registered, a password reset link has been sent.",

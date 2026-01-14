@@ -1,11 +1,12 @@
 package com.jaypal.authapp.auth.application;
 
-import com.jaypal.authapp.auth.exception.EmailAlreadyVerifiedException;
+import com.jaypal.authapp.auth.exception.EmailDeliveryException;
 import com.jaypal.authapp.auth.exception.EmailNotRegisteredException;
 import com.jaypal.authapp.auth.exception.VerificationTokenExpiredException;
 import com.jaypal.authapp.auth.exception.VerificationTokenInvalidException;
 import com.jaypal.authapp.auth.infrastructure.email.EmailService;
 import com.jaypal.authapp.config.FrontendProperties;
+import com.jaypal.authapp.user.exception.ResourceNotFoundException;
 import com.jaypal.authapp.user.model.User;
 import com.jaypal.authapp.user.model.VerificationToken;
 import com.jaypal.authapp.user.repository.EmailVerificationTokenRepository;
@@ -33,10 +34,8 @@ public class EmailVerificationService {
         Objects.requireNonNull(userId, "User ID cannot be null");
 
         final User user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.error("User not found during verification token creation: {}", userId);
-                    return new IllegalStateException("User not found for verification: " + userId);
-                });
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found for verification"));
 
         if (user.isEmailVerified()) {
             log.debug("Verification token creation skipped - already verified: {}", userId);
@@ -59,8 +58,8 @@ public class EmailVerificationService {
             emailService.sendVerificationEmail(user.getEmail(), verifyLink);
             log.info("Verification email sent - User ID: {}", userId);
         } catch (Exception ex) {
-            log.error("Verification email failed - User ID: {}", userId, ex);
-            throw new IllegalStateException("Failed to send verification email", ex);
+            log.error("Verification email delivery failed - User ID: {}", userId, ex);
+            throw new EmailDeliveryException("Failed to send verification email");
         }
     }
 
@@ -69,14 +68,12 @@ public class EmailVerificationService {
         Objects.requireNonNull(email, "Email cannot be null");
 
         if (email.isBlank()) {
+            log.debug("Resend verification silent fail");
             throw new EmailNotRegisteredException();
         }
 
         final User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> {
-                    log.debug("Verification resend requested for non-existent email");
-                    return new EmailNotRegisteredException();
-                });
+                .orElseThrow(EmailNotRegisteredException::new);
 
         if (user.isEmailVerified()) {
             log.debug("Verification resend requested for already-verified user: {}", user.getId());
@@ -108,14 +105,13 @@ public class EmailVerificationService {
         }
 
         final UUID userId = token.getUser().getId();
+
         final User user = userRepository.findById(userId)
-                .orElseThrow(() -> {
-                    log.error("User not found during email verification: {}", userId);
-                    return new IllegalStateException("User missing during verification: " + userId);
-                });
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User missing during email verification"));
 
         if (user.isEmailVerified()) {
-            log.debug("Email verification for already-verified user: {}", userId);
+            log.debug("Email verification attempted for already-verified user: {}", userId);
             tokenRepository.delete(token);
             return;
         }
@@ -127,18 +123,3 @@ public class EmailVerificationService {
         log.info("Email verified successfully - User ID: {}", userId);
     }
 }
-
-/*
-CHANGELOG:
-1. Added null checks for all method parameters
-2. Added blank check for email in resendVerificationToken
-3. Added blank check for tokenValue in verifyEmail
-4. Added check to skip token creation if email already verified
-5. Added check to handle already-verified users during verification
-6. Added try-catch for email sending with descriptive error
-7. Changed string concatenation to String.format for URL construction
-8. Added comprehensive logging for all operations
-9. Made all logging statements include user ID for audit trail
-10. Changed isEnabled() check to isEmailVerified() for clarity
-11. Added final modifiers to all local variables
-*/

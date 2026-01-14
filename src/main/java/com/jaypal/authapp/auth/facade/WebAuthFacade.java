@@ -1,18 +1,23 @@
 package com.jaypal.authapp.auth.facade;
 
-import com.jaypal.authapp.auth.dto.AuthLoginResult;
-import com.jaypal.authapp.auth.infrastructure.RefreshTokenExtractor;
 import com.jaypal.authapp.auth.application.AuthService;
-import com.jaypal.authapp.auth.infrastructure.cookie.CookieService;
+import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.exception.MissingRefreshTokenException;
+import com.jaypal.authapp.auth.infrastructure.RefreshTokenExtractor;
+import com.jaypal.authapp.auth.infrastructure.cookie.CookieService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
+import com.jaypal.authapp.security.ratelimit.InvalidRefreshTokenRateLimiter;
+import com.jaypal.authapp.security.ratelimit.RequestIpResolver;
+import com.jaypal.authapp.token.exception.RefreshTokenExpiredException;
+import com.jaypal.authapp.token.exception.RefreshTokenNotFoundException;
+import com.jaypal.authapp.token.exception.RefreshTokenRevokedException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.Objects;
+import java.time.Instant;
 
 @Slf4j
 @Component
@@ -22,111 +27,160 @@ public class WebAuthFacade {
     private final AuthService authService;
     private final CookieService cookieService;
     private final RefreshTokenExtractor refreshTokenExtractor;
+    private final InvalidRefreshTokenRateLimiter invalidRefreshLimiter;
 
-    public AuthLoginResult login(
-            AuthPrincipal principal,
-            HttpServletResponse response
-    ) {
+    /* =========================
+       LOGIN FLOW
+       ========================= */
+
+    public AuthLoginResult login(AuthPrincipal principal, HttpServletResponse response) {
         if (principal == null) {
             throw new IllegalArgumentException("AuthPrincipal must not be null");
         }
-        if (response == null) {
-            throw new IllegalArgumentException("HttpServletResponse must not be null");
-        }
 
-        log.debug("Processing login for user: {}", principal.getUserId());
+        log.debug(
+                "Login flow started | userId={}",
+                principal.getUserId()
+        );
 
-        final AuthLoginResult result = authService.login(principal);
+        AuthLoginResult result = authService.login(principal);
 
-        attachTokensToResponse(response, result);
+        log.debug(
+                "Login tokens issued | userId={} refreshExpiresAt={}",
+                result.user().getId(),
+                result.refreshExpiresAtEpochSeconds()
+        );
 
-        log.debug("Login completed successfully for user: {}", principal.getUserId());
+        attachRefreshCookie(response, result);
 
-        return result;
-    }
-
-    public AuthLoginResult refresh(
-            HttpServletRequest request,
-            HttpServletResponse response
-    ) {
-        if (request == null) {
-            throw new IllegalArgumentException("HttpServletRequest must not be null");
-        }
-        if (response == null) {
-            throw new IllegalArgumentException("HttpServletResponse must not be null");
-        }
-
-        log.debug("Processing token refresh flow");
-
-        String refreshToken = refreshTokenExtractor.extract(request)
-                .orElseThrow(MissingRefreshTokenException::new);
-        log.debug("Refresh headers: X-Refresh-Token={}, Cookie={}",
-                request.getHeader("X-Refresh-Token"),
-                request.getHeader("Cookie"));
-
-        final AuthLoginResult result = authService.refresh(refreshToken);
-
-        validateLoginResult(result);
-
-        attachTokensToResponse(response, result);
-
-        log.debug("Token refresh completed successfully for user: {}", result.user().getId());
+        log.debug(
+                "Login flow completed | userId={}",
+                principal.getUserId()
+        );
 
         return result;
     }
 
-    public void logout(
-            HttpServletRequest request,
-            HttpServletResponse response
-    ) {
-        if (request == null) {
-            throw new IllegalArgumentException("HttpServletRequest must not be null");
-        }
-        if (response == null) {
-            throw new IllegalArgumentException("HttpServletResponse must not be null");
-        }
+    /* =========================
+       REFRESH FLOW
+       ========================= */
 
-        log.debug("Processing logout flow");
+    public AuthLoginResult refresh(HttpServletRequest request, HttpServletResponse response) {
+        log.debug("Refresh flow started");
+
+        String ip = RequestIpResolver.resolve(request);
 
         try {
-            refreshTokenExtractor.extract(request)
-                    .ifPresent(authService::logout);
-        } catch (Exception ex) {
-            log.warn("Logout token revocation failed", ex);
-        } finally {
-            cookieService.clearRefreshCookie(response);
-            cookieService.addNoStoreHeader(response);
+            String refreshToken = refreshTokenExtractor.extract(request)
+                    .map(token -> {
+                        log.debug(
+                                "Refresh token extracted | length={} prefix={}",
+                                token.length(),
+                                token.substring(0, Math.min(8, token.length()))
+                        );
+                        return token;
+                    })
+                    .orElseThrow(() -> {
+                        log.warn("Refresh failed: no refresh token present");
+                        return new MissingRefreshTokenException();
+                    });
+
+            AuthLoginResult result = authService.refresh(refreshToken);
+
+            log.debug(
+                    "Refresh successful | userId={} newRefreshExpiresAt={}",
+                    result.user().getId(),
+                    result.refreshExpiresAtEpochSeconds()
+            );
+
+            attachRefreshCookie(response, result);
+
+            log.debug(
+                    "Refresh flow completed | userId={}",
+                    result.user().getId()
+            );
+
+            return result;
+
+        } catch (RefreshTokenNotFoundException |
+                 RefreshTokenExpiredException |
+                 RefreshTokenRevokedException |
+                 MissingRefreshTokenException ex) {
+
+            // 🔥 INVALID REFRESH → RATE LIMIT HERE
+            invalidRefreshLimiter.check(ip);
+
+            log.warn(
+                    "Invalid refresh attempt | ip={} reason={}",
+                    ip,
+                    ex.getClass().getSimpleName()
+            );
+
+            throw ex;
         }
+    }
+
+
+    /* =========================
+       LOGOUT FLOW
+       ========================= */
+
+    public void logout(HttpServletRequest request, HttpServletResponse response) {
+        log.debug("Logout flow started");
+
+        refreshTokenExtractor.extract(request).ifPresentOrElse(
+                token -> {
+                    log.debug(
+                            "Logout refresh token found | length={} prefix={}",
+                            token.length(),
+                            token.substring(0, Math.min(8, token.length()))
+                    );
+                    authService.logout(token);
+                },
+                () -> log.debug("Logout called without refresh token")
+        );
+
+        cookieService.clearRefreshCookie(response);
+        cookieService.addNoStoreHeader(response);
 
         log.debug("Logout flow completed");
     }
 
-    private void attachTokensToResponse(HttpServletResponse response, AuthLoginResult result) {
-        final int refreshTtl = (int) result.refreshTtlSeconds();
+    /* =========================
+       INTERNAL HELPERS
+       ========================= */
 
-        if (refreshTtl <= 0)  {
-            log.error("Invalid refresh TTL: {}", refreshTtl);
+    private void attachRefreshCookie(HttpServletResponse response, AuthLoginResult result) {
+        long now = Instant.now().getEpochSecond();
+        long expiresAt = result.refreshExpiresAtEpochSeconds();
+        long ttlSeconds = expiresAt - now;
+        log.debug(
+                "Attaching refresh cookie | userId={} now={} expiresAt={} ttlSeconds={}",
+                result.user().getId(),
+                now,
+                expiresAt,
+                ttlSeconds
+        );
+
+        if (ttlSeconds <= 0) {
+            log.error(
+                    "Invalid refresh TTL detected | userId={} ttlSeconds={}",
+                    result.user().getId(),
+                    ttlSeconds
+            );
             throw new IllegalStateException("Invalid refresh token TTL");
         }
 
         cookieService.attachRefreshCookie(
                 response,
                 result.refreshToken(),
-                refreshTtl
+                (int) ttlSeconds
         );
 
-        cookieService.addNoStoreHeader(response);
-    }
-
-    private void validateLoginResult(AuthLoginResult result) {
-        if (result == null) {
-            throw new IllegalStateException("AuthLoginResult must not be null");
-        }
-        if (result.refreshToken() == null || result.refreshToken().isBlank()) {
-            throw new IllegalStateException("Refresh token must not be null or blank");
-        }
-        if (result.user() == null) {
-            throw new IllegalStateException("Authenticated user must not be null");
-        }
+        log.debug(
+                "Refresh cookie attached | userId={} ttlSeconds={}",
+                result.user().getId(),
+                ttlSeconds
+        );
     }
 }

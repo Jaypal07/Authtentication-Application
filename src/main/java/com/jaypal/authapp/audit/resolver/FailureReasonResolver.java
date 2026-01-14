@@ -2,8 +2,10 @@ package com.jaypal.authapp.audit.resolver;
 
 import com.jaypal.authapp.audit.domain.AuthFailureReason;
 import com.jaypal.authapp.auth.exception.*;
+import com.jaypal.authapp.security.ratelimit.RateLimitExceededException;
 import com.jaypal.authapp.token.exception.*;
 import com.jaypal.authapp.user.exception.*;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
@@ -92,8 +94,14 @@ public class FailureReasonResolver {
 
         // ---- VALIDATION ----
         if (root instanceof MethodArgumentNotValidException ||
+                root instanceof ConstraintViolationException ||
                 root instanceof IllegalArgumentException) {
             return AuthFailureReason.VALIDATION_FAILED;
+        }
+
+        // ---- RATE LIMITING ----
+        if (root instanceof RateLimitExceededException) {
+            return AuthFailureReason.RATE_LIMIT_EXCEEDED;
         }
 
         // ---- NOT FOUND ----
@@ -108,6 +116,7 @@ public class FailureReasonResolver {
                 ex.getClass().getName()
         );
 
+        // ---- FALLBACK (silent & intentional) ----
         return AuthFailureReason.SYSTEM_ERROR;
     }
 
@@ -124,7 +133,6 @@ public class FailureReasonResolver {
 
             visited.add(current);
 
-            // Spring Security wrapper
             if (current instanceof InternalAuthenticationServiceException) {
                 current = current.getCause();
                 continue;
@@ -136,3 +144,4 @@ public class FailureReasonResolver {
         return current != null ? current : ex;
     }
 }
+

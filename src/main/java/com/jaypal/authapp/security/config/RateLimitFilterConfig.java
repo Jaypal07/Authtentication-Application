@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @RequiredArgsConstructor
-public class FilterConfig {
+public class RateLimitFilterConfig {
 
     private final RateLimitFilter rateLimitFilter;
 

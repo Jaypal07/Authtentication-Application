@@ -29,7 +29,7 @@ spring:
       validation-timeout: ${DB_VALIDATION_TIMEOUT:5000}
       leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD:60000}
       initialization-fail-timeout: -1
-      auto-commit: true
+      auto-commit: false
       connection-test-query: SELECT 1
 
   jpa:
@@ -49,7 +49,7 @@ spring:
         query:
           in_clause_parameter_padding: true
         connection:
-          provider_disables_autocommit: false
+          provider_disables_autocommit: true
 
   security:
     oauth2:

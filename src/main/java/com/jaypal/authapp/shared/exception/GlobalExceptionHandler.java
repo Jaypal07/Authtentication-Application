@@ -13,6 +13,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -228,7 +229,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(EmailNotRegisteredException.class)
     public ResponseEntity<Void> swallowEmailNotRegistered() {
-        log.debug("Email verification resend for non-existent email");
+        log.debug("Email verification resend call for non-existent email");
         return ResponseEntity.ok().build();
     }
 
@@ -396,6 +397,21 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingRequestParam(
+            MissingServletRequestParameterException ex,
+            WebRequest request
+    ) {
+        return problem(
+                HttpStatus.BAD_REQUEST,
+                "Missing request parameter",
+                "Required request parameter '%s' is missing."
+                        .formatted(ex.getParameterName()),
+                request,
+                "Missing request parameter: " + ex.getParameterName(),
+                false
+        );
+    }
 
 
     @ExceptionHandler(InternalAuthenticationServiceException.class)
@@ -412,7 +428,7 @@ public class GlobalExceptionHandler {
             return problem(
                     HttpStatus.FORBIDDEN,
                     "Account disabled",
-                    "Your account has been disabled. Please contact support or verify you email",
+                    "Your account has been disabled. Please contact support or verify your email",
                     request,
                     "Authentication failure: account disabled (wrapped)",
                     false
@@ -511,6 +527,41 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(problem, headers, HttpStatus.METHOD_NOT_ALLOWED);
     }
 
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConstraintViolation(
+            jakarta.validation.ConstraintViolationException ex,
+            WebRequest request
+    ) {
+        Map<String, String> errors = new HashMap<>();
+
+        ex.getConstraintViolations().forEach(violation -> {
+            String path = violation.getPropertyPath() != null
+                    ? violation.getPropertyPath().toString()
+                    : "parameter";
+            errors.put(path, violation.getMessage());
+        });
+
+        log.warn(
+                "Constraint violation | path={} | violations={}",
+                extractPath(request),
+                errors.size()
+        );
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("type", URI.create(TYPE_ABOUT_BLANK));
+        body.put("title", "Validation failed");
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("detail", "Request validation failed");
+        body.put("errors", errors);
+        body.put("instance", extractPath(request));
+        body.put("timestamp", Instant.now().toString());
+
+        return ResponseEntity
+                .badRequest()
+                .header(CORRELATION_HEADER, resolveCorrelationId(request))
+                .body(body);
+    }
 
 
     @ExceptionHandler(Exception.class)

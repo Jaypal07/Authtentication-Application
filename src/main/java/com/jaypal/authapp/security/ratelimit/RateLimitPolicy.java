@@ -10,11 +10,11 @@ public final class RateLimitPolicy {
     public static final Duration WINDOW = Duration.ofMinutes(10);
 
     public static final Map<String, Integer> LIMITS = Map.of(
-            "/api/v1/auth/login", 5,
-            "/api/v1/auth/register", 5,
-            "/api/v1/auth/forgot-password", 5,
-            "/api/v1/auth/reset-password", 5,
-            "/api/v1/auth/resend-verification", 5,
+            "/api/v1/auth/login", 10,
+            "/api/v1/auth/register", 10,
+            "/api/v1/auth/forgot-password", 10,
+            "/api/v1/auth/reset-password", 10,
+            "/api/v1/auth/resend-verification", 10,
             "DEFAULT", 100
     );
 

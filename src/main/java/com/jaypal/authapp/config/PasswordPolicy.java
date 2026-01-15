@@ -12,12 +12,25 @@ public class PasswordPolicy {
     private static final int MAX_LENGTH = 72;
 
     private static final Pattern PASSWORD_PATTERN = Pattern.compile(
-            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{" + MIN_LENGTH + ",}$"
+            "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)" +
+                    "[A-Za-z\\d!@#$%^&*()_+\\-=\\[\\]{};:'\"\\\\|,.<>/?]{" +
+                    MIN_LENGTH + "," + MAX_LENGTH + "}$"
     );
+
 
     public void validate(String password) {
         if (password == null) {
             throw new PasswordPolicyViolationException("Password must not be null");
+        }
+
+        if(password.isBlank()) {
+            throw new PasswordPolicyViolationException("Password must not be blank");
+        }
+
+        if (password.contains(" ")) {
+            throw new PasswordPolicyViolationException(
+                    "Password must not contain spaces"
+            );
         }
 
         if (password.length() < MIN_LENGTH) {
@@ -34,15 +47,11 @@ public class PasswordPolicy {
 
         if (!PASSWORD_PATTERN.matcher(password).matches()) {
             throw new PasswordPolicyViolationException(
-                    "Password must contain uppercase, lowercase, and digit"
+                    "Password must contain at least one uppercase letter, one lowercase letter, one digit, " +
+                            "and must not contain spaces or emojis"
             );
         }
 
-        if (password.contains(" ")) {
-            throw new PasswordPolicyViolationException(
-                    "Password must not contain spaces"
-            );
-        }
     }
 }
 

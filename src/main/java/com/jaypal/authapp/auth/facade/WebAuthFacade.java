@@ -2,6 +2,7 @@ package com.jaypal.authapp.auth.facade;
 
 import com.jaypal.authapp.auth.application.AuthService;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
+import com.jaypal.authapp.auth.dto.RefreshTokenRequest;
 import com.jaypal.authapp.auth.exception.MissingRefreshTokenException;
 import com.jaypal.authapp.auth.infrastructure.RefreshTokenExtractor;
 import com.jaypal.authapp.auth.infrastructure.cookie.CookieService;
@@ -18,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -65,25 +67,33 @@ public class WebAuthFacade {
        REFRESH FLOW
        ========================= */
 
-    public AuthLoginResult refresh(HttpServletRequest request, HttpServletResponse response) {
+    public AuthLoginResult refresh(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            RefreshTokenRequest body
+    ) {
         log.debug("Refresh flow started");
 
         String ip = RequestIpResolver.resolve(request);
 
         try {
-            String refreshToken = refreshTokenExtractor.extract(request)
-                    .map(token -> {
-                        log.debug(
-                                "Refresh token extracted | length={} prefix={}",
-                                token.length(),
-                                token.substring(0, Math.min(8, token.length()))
-                        );
-                        return token;
-                    })
-                    .orElseThrow(() -> {
-                        log.warn("Refresh failed: no refresh token present");
-                        return new MissingRefreshTokenException();
-                    });
+            String refreshToken =
+                    refreshTokenExtractor.extract(request)
+                            .or(() -> Optional.ofNullable(body)
+                                    .map(RefreshTokenRequest::refreshToken)
+                                    .filter(t -> !t.isBlank())
+                                    .map(token -> {
+                                        log.debug(
+                                                "Refresh token extracted from body | length={} prefix={}",
+                                                token.length(),
+                                                token.substring(0, Math.min(8, token.length()))
+                                        );
+                                        return token;
+                                    }))
+                            .orElseThrow(() -> {
+                                log.warn("Refresh failed: no refresh token present");
+                                return new MissingRefreshTokenException();
+                            });
 
             AuthLoginResult result = authService.refresh(refreshToken);
 
@@ -95,10 +105,7 @@ public class WebAuthFacade {
 
             attachRefreshCookie(response, result);
 
-            log.debug(
-                    "Refresh flow completed | userId={}",
-                    result.user().getId()
-            );
+            log.debug("Refresh flow completed | userId={}", result.user().getId());
 
             return result;
 
@@ -119,6 +126,7 @@ public class WebAuthFacade {
             throw ex;
         }
     }
+
 
 
     /* =========================

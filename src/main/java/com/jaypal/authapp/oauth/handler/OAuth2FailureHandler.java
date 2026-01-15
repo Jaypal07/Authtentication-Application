@@ -159,18 +159,3 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
                 baseUrl, separator, encodedErrorCode, encodedMessage);
     }
 }
-
-/*
-CHANGELOG:
-1. CRITICAL: Added audit logging for OAuth failures (was missing)
-2. Added provider extraction from request URI
-3. Added error code extraction from OAuth2AuthenticationException
-4. Added error message sanitization to prevent XSS
-5. Added URL encoding for error parameters
-6. Added audit context capture from ThreadLocal
-7. Added mapping of OAuth errors to AuthFailureReason
-8. Added try-catch around audit logging
-9. Improved logging with provider and error code
-10. Added validation for failure redirect URL
-11. Made error messages safe for URL parameters
-*/

@@ -87,7 +87,7 @@ public class AuthService {
     public AuthLoginResult refresh(String rawRefreshToken) {
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             log.warn("Refresh attempt with null or blank token");
-            throw new InvalidRefreshTokenException();
+            throw new InvalidRefreshTokenException("Refresh token too long");
         }
 
         final RefreshToken current = refreshTokenService.validate(rawRefreshToken);
@@ -223,9 +223,6 @@ public class AuthService {
     public void resetPassword(String tokenValue, String rawPassword) {
         if (tokenValue == null || tokenValue.isBlank()) {
             throw new PasswordResetTokenInvalidException();
-        }
-        if (rawPassword == null) {
-            throw new IllegalArgumentException("Password must not be null");
         }
 
         passwordPolicy.validate(rawPassword);

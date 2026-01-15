@@ -155,10 +155,11 @@ public class AuthController {
     )
     @PostMapping("/refresh")
     public ResponseEntity<TokenResponse> refresh(
+            @RequestBody(required = false) RefreshTokenRequest body,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        final AuthLoginResult result = webAuthFacade.refresh(request, response);
+        final AuthLoginResult result = webAuthFacade.refresh(request, response, body);
 
         log.debug("Token refreshed successfully - User ID: {}", result.user().getId());
 

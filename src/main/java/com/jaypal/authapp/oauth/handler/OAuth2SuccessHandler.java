@@ -132,18 +132,3 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
         }
     }
 }
-
-/*
-CHANGELOG:
-1. CRITICAL FIX: Removed Math.toIntExact (throws on overflow) - now caps at Integer.MAX_VALUE
-2. Added comprehensive validation of OAuth token and principal
-3. Added try-catch to handle failures gracefully
-4. Added validation for access token (not just refresh token)
-5. Added blank checks for tokens
-6. Added MAX_COOKIE_TTL constant
-7. Extracted URL retrieval with validation
-8. Added fallback error handling if login service fails
-9. Improved error messages with actual values
-10. Added null checks for all critical paths
-11. Made logging more informative
-*/

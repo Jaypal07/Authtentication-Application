@@ -1,11 +1,13 @@
 package com.jaypal.authapp.user.repository;
 
+import com.jaypal.authapp.user.dto.UserResponseDto;
 import com.jaypal.authapp.user.model.Provider;
 import com.jaypal.authapp.user.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,5 +41,20 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     """)
     Optional<Long> findPermissionVersionById(UUID userId);
 
-
+    @Query("""
+        select new com.jaypal.authapp.user.dto.UserResponseDto(
+            u.id,
+            u.email,
+            u.name,
+            u.image,
+            u.enabled,
+            u.provider,
+            null,
+            null,
+            u.createdAt,
+            u.updatedAt
+        )
+        from User u
+    """)
+    List<UserResponseDto> findAllBaseUsers();
 }

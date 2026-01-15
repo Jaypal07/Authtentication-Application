@@ -3,6 +3,7 @@ package com.jaypal.authapp.user.application;
 import com.jaypal.authapp.user.dto.*;
 import com.jaypal.authapp.user.model.User;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface UserService {
@@ -36,6 +37,8 @@ public interface UserService {
             UUID userId,
             AdminUserRoleUpdateRequest request
     );
+
+    List<UserResponseDto> getAllUsers();
 
     void adminDisableUser(UUID userId);
 

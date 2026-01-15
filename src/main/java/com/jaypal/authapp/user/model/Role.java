@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -31,6 +33,9 @@ public class Role {
 
     @Column(nullable = false, updatable = false)
     private boolean immutable;
+
+    @OneToMany(mappedBy = "role", fetch = FetchType.LAZY)
+    private Set<RolePermission> rolePermissions = new HashSet<>();
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

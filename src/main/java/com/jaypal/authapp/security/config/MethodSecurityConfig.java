@@ -29,11 +29,3 @@ public class MethodSecurityConfig {
         };
     }
 }
-
-/*
-CHANGELOG:
-1. Added logging for method-level authorization denials
-2. Added method name and class name to error message for debugging
-3. Added @Slf4j for consistent logging
-4. Made error message more descriptive with method context
-*/

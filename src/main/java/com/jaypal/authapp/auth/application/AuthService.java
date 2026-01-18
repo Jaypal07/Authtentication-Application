@@ -10,7 +10,9 @@ import com.jaypal.authapp.security.jwt.JwtService;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.token.application.IssuedRefreshToken;
 import com.jaypal.authapp.token.application.RefreshTokenService;
+import com.jaypal.authapp.token.exception.RefreshTokenExpiredException;
 import com.jaypal.authapp.token.exception.RefreshTokenNotFoundException;
+import com.jaypal.authapp.token.exception.RefreshTokenRevokedException;
 import com.jaypal.authapp.token.model.RefreshToken;
 import com.jaypal.authapp.user.application.PermissionService;
 import com.jaypal.authapp.user.application.UserService;
@@ -290,4 +292,24 @@ public class AuthService {
                 refreshToken.expiresAt().getEpochSecond()
         );
     }
+    @Transactional(readOnly = true)
+    public String resolveUserId(String rawRefreshToken) {
+        try {
+            return refreshTokenService
+                    .validate(rawRefreshToken)   // already exists
+                    .getUserId()
+                    .toString();
+        } catch (RefreshTokenNotFoundException |
+                 RefreshTokenExpiredException |
+                 RefreshTokenRevokedException ex) {
+
+            // Logout must be best-effort and audit-safe
+            log.debug(
+                    "Unable to resolve userId from refresh token for audit | reason={}",
+                    ex.getClass().getSimpleName()
+            );
+            return null;
+        }
+    }
+
 }

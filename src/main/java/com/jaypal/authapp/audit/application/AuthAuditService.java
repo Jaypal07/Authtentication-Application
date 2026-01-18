@@ -28,30 +28,89 @@ public class AuthAuditService {
             AuthProvider provider,
             AuditRequestContext context
     ) {
-        try {
-            enforceInvariants(outcome, failureReason, subject, category, event, provider);
-
-            final AuthAuditLog log = new AuthAuditLog(
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "AUDIT invoked | thread={} category={} event={} outcome={} subject={} failureReason={} provider={} context={}",
+                    Thread.currentThread().getName(),
                     category,
                     event,
                     outcome,
-                    determineSeverity(outcome, failureReason),
+                    subject,
+                    failureReason,
+                    provider,
+                    context
+            );
+        }
+
+        try {
+            if (log.isDebugEnabled()) {
+                log.debug("AUDIT enforcing invariants | event={}", event);
+            }
+
+            enforceInvariants(outcome, failureReason, subject, category, event, provider);
+
+            AuditSeverity severity = determineSeverity(outcome, failureReason);
+
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "AUDIT severity resolved | event={} outcome={} failureReason={} severity={}",
+                        event,
+                        outcome,
+                        failureReason,
+                        severity
+                );
+            }
+
+            AuthAuditLog auditLog = new AuthAuditLog(
+                    category,
+                    event,
+                    outcome,
+                    severity,
                     subject,
                     failureReason,
                     provider,
                     context
             );
 
-            repository.save(log);
+            if (log.isDebugEnabled()) {
+                log.debug("AUDIT entity created | auditLog={}", auditLog);
+            }
 
-            if (outcome == AuditOutcome.FAILURE && failureReason != null &&
-                    failureReason.getSeverity() == AuditSeverity.CRITICAL) {
-                log.warn("CRITICAL security event logged: event={}, subject={}, reason={}, ip={}",
-                        event, subject.getType(), failureReason,
-                        context != null ? context.ipAddress() : "N/A");
+            AuthAuditLog saved = repository.save(auditLog);
+
+            log.info(
+                    "AUDIT persisted | auditId={} event={} outcome={} severity={}",
+                    saved.getId(),
+                    event,
+                    outcome,
+                    severity
+            );
+
+            if (outcome == AuditOutcome.FAILURE
+                    && failureReason != null
+                    && failureReason.getSeverity() == AuditSeverity.CRITICAL) {
+
+                log.warn(
+                        "AUDIT CRITICAL | event={} subject={} failureReason={} provider={} context={}",
+                        event,
+                        subject,
+                        failureReason,
+                        provider,
+                        context
+                );
             }
 
         } catch (Exception ex) {
+            log.error(
+                    "AUDIT failed | event={} outcome={} subject={} provider={} context={}",
+                    event,
+                    outcome,
+                    subject,
+                    provider,
+                    context,
+                    ex
+            );
+
             failureMonitor.onAuditFailure(event, ex);
         }
     }
@@ -64,6 +123,18 @@ public class AuthAuditService {
             AuthAuditEvent event,
             AuthProvider provider
     ) {
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "AUDIT invariant check | category={} event={} outcome={} subject={} failureReason={} provider={}",
+                    category,
+                    event,
+                    outcome,
+                    subject,
+                    failureReason,
+                    provider
+            );
+        }
+
         Objects.requireNonNull(category, "Category cannot be null");
         Objects.requireNonNull(event, "Event cannot be null");
         Objects.requireNonNull(outcome, "Outcome cannot be null");
@@ -71,13 +142,21 @@ public class AuthAuditService {
         Objects.requireNonNull(provider, "Provider cannot be null");
 
         if (outcome == AuditOutcome.FAILURE && failureReason == null) {
+            log.error("AUDIT invariant violation | FAILURE without failureReason event={}", event);
             throw new IllegalArgumentException(
-                    "Failure outcome must include reason for event: " + event);
+                    "Failure outcome must include reason for event: " + event
+            );
         }
 
         if (outcome == AuditOutcome.SUCCESS && failureReason != null) {
+            log.error("AUDIT invariant violation | SUCCESS with failureReason event={}", event);
             throw new IllegalArgumentException(
-                    "Success outcome must not include failure reason for event: " + event);
+                    "Success outcome must not include failure reason for event: " + event
+            );
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("AUDIT invariant check passed | event={}", event);
         }
     }
 
@@ -85,21 +164,20 @@ public class AuthAuditService {
             AuditOutcome outcome,
             AuthFailureReason failureReason
     ) {
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "AUDIT determining severity | outcome={} failureReason={}",
+                    outcome,
+                    failureReason
+            );
+        }
+
         if (outcome == AuditOutcome.SUCCESS) {
             return AuditSeverity.LOW;
         }
 
-        return failureReason != null ? failureReason.getSeverity() : AuditSeverity.MEDIUM;
+        return failureReason != null
+                ? failureReason.getSeverity()
+                : AuditSeverity.MEDIUM;
     }
 }
-
-/*
-CHANGELOG:
-1. Added null checks for all required parameters
-2. Added logging for CRITICAL severity events
-3. Extracted severity determination to separate method
-4. Improved error messages with event context
-5. Added IP address to critical event logs (when available)
-6. Made invariant enforcement more descriptive
-7. Context parameter now properly used (not always null)
-*/

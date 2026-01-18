@@ -22,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -202,26 +203,16 @@ public class AuthController {
     )
     @PostMapping("/logout")
     public ResponseEntity<Map<String, String>> logout(
-            Authentication authentication,
+            @AuthenticationPrincipal AuthPrincipal principal,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                    "message", "Not authenticated",
-                    "status", "error"
-            ));
-        }
-
-        AuthPrincipal principal = (AuthPrincipal) authentication.getPrincipal();
-
         webAuthFacade.logout(principal, request, response);
-
         SecurityContextHolder.clearContext();
 
         log.info(
                 "Logout successful. userId={} ip={}",
-                principal.getUserId(),
+                principal != null ? principal.getUserId() : "anonymous",
                 RequestIpResolver.resolve(request)
         );
 

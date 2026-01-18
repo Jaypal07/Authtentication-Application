@@ -41,12 +41,3 @@ public final class AuditContextHolder {
         }
     }
 }
-
-/*
-CHANGELOG:
-1. Created ThreadLocal holder for audit request context
-2. Added ContextCopyingDecorator to propagate context to async threads
-3. Ensures context is cleared after async task completion
-4. Private constructor to prevent instantiation
-5. This solves the async context propagation problem
-*/

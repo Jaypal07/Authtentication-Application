@@ -1,7 +1,10 @@
 package com.jaypal.authapp.audit.domain;
 
+import lombok.ToString;
+
 import java.util.Objects;
 
+@ToString
 public final class AuditSubject {
 
     private final AuditSubjectType type;

@@ -139,61 +139,60 @@ security:
     refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME:refreshToken}
     cookie-secure: ${JWT_COOKIE_SECURE:true}
     cookie-http-only: true
-    cookie-same-site: Strict
+    cookie-same-site: Lax
     cookie-domain: ${JWT_COOKIE_DOMAIN:}
 
 # ===============================
-# RATE LIMITING (REDIS-BACKED)
+# RATE LIMITING (DEV)
 # ===============================
 rate-limit:
   endpoints:
     default:
-      capacity: 100
-      refill-per-second: 1
+      capacity: 1000
+      refill-per-second: 50
 
-    # LOGIN is handled explicitly in controller
-    # DO NOT rely on filter for this
     /api/v1/auth/login:
-      capacity: 3
-      refill-per-second: 0.00003   # ~1 token per 9 hours
+      capacity: 50
+      refill-per-second: 5        # 5 attempts per second
 
     /api/v1/auth/register:
-      capacity: 10
-      refill-per-second: 0.2
+      capacity: 50
+      refill-per-second: 5
 
     /api/v1/auth/forgot-password:
-      capacity: 10
-      refill-per-second: 0.1
+      capacity: 50
+      refill-per-second: 5
 
     /api/v1/auth/reset-password:
-      capacity: 10
-      refill-per-second: 0.1
+      capacity: 50
+      refill-per-second: 5
 
-  # Per-email brute force
+  # Per-email brute force (DEV)
   login-email:
-    capacity: 5
-    refill-per-second: 0.00002     # ~1 token per 14 hours
-
-  # Per-IP flood
-  login-ip:
     capacity: 20
-    refill-per-second: 0.01        # ~1 token per 100s
+    refill-per-second: 2
+
+  # Per-IP flood (DEV)
+  login-ip:
+    capacity: 100
+    refill-per-second: 10
 
   # Invalid refresh abuse
   invalid-refresh:
-    capacity: 10
-    refill-per-second: 0.05
+    capacity: 50
+    refill-per-second: 5
 
   # Refresh rotation abuse
   refresh-rotate:
-    capacity: 5
-    refill-per-second: 0.02
+    capacity: 50
+    refill-per-second: 5
     internal-cidrs:
       - 127.0.0.1/32
       - ::1/128
       - 10.0.0.0/8
       - 172.16.0.0/12
       - 192.168.0.0/16
+
 
 
 

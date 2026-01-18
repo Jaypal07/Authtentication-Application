@@ -1,12 +1,15 @@
 package com.jaypal.authapp.audit.context;
 
 import com.jaypal.authapp.audit.application.AuditRequestContext;
+import com.jaypal.authapp.security.principal.AuthPrincipal;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -31,8 +34,28 @@ public class AuditRequestContextFilter extends OncePerRequestFilter {
             String userAgent = extractUserAgent(request);
 
             AuditContextHolder.setContext(
-                    new AuditRequestContext(ipAddress, userAgent)
+                    new AuditRequestContext(ipAddress, userAgent, null)
             );
+            Authentication authentication =
+                    SecurityContextHolder.getContext().getAuthentication();
+
+            if (authentication != null
+                    && authentication.isAuthenticated()
+                    && authentication.getPrincipal() instanceof AuthPrincipal principal) {
+
+                AuditRequestContext ctx = AuditContextHolder.getContext();
+
+                AuditContextHolder.setContext(
+                        new AuditRequestContext(
+                                ctx.ipAddress(),
+                                ctx.userAgent(),
+                                principal.getUserId().toString()
+                        )
+                );
+
+                log.trace("Audit userId set from SecurityContext: {}", principal.getUserId());
+            }
+
 
             log.trace(
                     "Audit context initialized: ip={}, ua={}",

@@ -36,19 +36,30 @@ public class SubjectResolver {
             }
 
             // Param-based subject types
+            // USER_ID can be resolved from AuditRequestContext
             if (annotation.subjectParam().isBlank()) {
+                if (type == AuditSubjectType.USER_ID) {
+                    return resolveUserIdFromContext();
+                }
+
                 log.warn("Audit subjectParam is blank for subject type {}", type);
                 return AuditSubject.anonymous();
             }
+
 
             for (int i = 0; i < paramNames.length; i++) {
                 if (annotation.subjectParam().equals(paramNames[i])) {
                     Object value = args[i];
 
                     if (value == null) {
+                        if (type == AuditSubjectType.USER_ID) {
+                            return resolveUserIdFromContext();
+                        }
+
                         log.warn("Audit subject parameter '{}' is null", paramNames[i]);
                         return AuditSubject.anonymous();
                     }
+
 
                     return extractSubject(type, value);
                 }
@@ -130,4 +141,22 @@ public class SubjectResolver {
             return AuditSubject.anonymous();
         }
     }
+
+    private AuditSubject resolveUserIdFromContext() {
+        try {
+            var ctx = com.jaypal.authapp.audit.context.AuditContextHolder.getContext();
+
+            if (ctx != null && ctx.userId() != null && !ctx.userId().isBlank()) {
+                return AuditSubject.userId(ctx.userId());
+            }
+
+            log.debug("No userId found in AuditRequestContext, defaulting to ANONYMOUS");
+            return AuditSubject.anonymous();
+
+        } catch (Exception ex) {
+            log.warn("Failed to resolve userId from AuditRequestContext", ex);
+            return AuditSubject.anonymous();
+        }
+    }
+
 }

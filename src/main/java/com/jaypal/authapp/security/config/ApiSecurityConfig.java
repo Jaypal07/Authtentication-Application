@@ -43,10 +43,17 @@ public class ApiSecurityConfig {
                         sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers(
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/email-verify/**",
+                                "/api/v1/auth/password-reset/**",
+                                "/api/v1/auth/logout"
+                        ).permitAll()
                         .requestMatchers("/api/health", "/api/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
+
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(this::handleAuthenticationFailure)
                         .accessDeniedHandler(this::handleAccessDenied)

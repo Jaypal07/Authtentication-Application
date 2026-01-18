@@ -1,5 +1,7 @@
 package com.jaypal.authapp.auth.facade;
 
+import com.jaypal.authapp.audit.application.AuditRequestContext;
+import com.jaypal.authapp.audit.context.AuditContextHolder;
 import com.jaypal.authapp.auth.application.AuthService;
 import com.jaypal.authapp.auth.dto.AuthLoginResult;
 import com.jaypal.authapp.auth.dto.RefreshTokenRequest;
@@ -158,28 +160,49 @@ public class WebAuthFacade {
             HttpServletRequest request,
             HttpServletResponse response
     ) {
-        log.debug("Logout flow started | userId={}", principal.getUserId());
+        log.debug(
+                "Logout flow started | userId={}",
+                principal != null ? principal.getUserId() : "anonymous"
+        );
 
         try {
-            // Revoke refresh token if present
             refreshTokenExtractor.extract(request)
-                    .ifPresent(authService::logout);
+                    .ifPresent(token -> {
+
+                        String userId = authService.resolveUserId(token); // NEW
+
+                        AuditRequestContext ctx = AuditContextHolder.getContext();
+                        if (ctx != null) {
+                            AuditContextHolder.setContext(
+                                    new AuditRequestContext(
+                                            ctx.ipAddress(),
+                                            ctx.userAgent(),
+                                            userId
+                                    )
+                            );
+                        }
+
+                        authService.logout(token);
+                    });
 
         } catch (Exception ex) {
-            // Logout must never fail (idempotent)
             log.warn(
                     "Logout error ignored | userId={} reason={}",
-                    principal.getUserId(),
+                    principal != null ? principal.getUserId() : "anonymous",
                     ex.getMessage()
             );
         } finally {
-            // Always clear client-side state
             cookieService.clearRefreshCookie(response);
             cookieService.addNoStoreHeader(response);
 
-            log.debug("Logout flow completed | userId={}", principal.getUserId());
+            log.debug(
+                    "Logout flow completed | userId={}",
+                    principal != null ? principal.getUserId() : "anonymous"
+            );
         }
     }
+
+
 
 
     /* =========================

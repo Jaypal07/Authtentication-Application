@@ -24,6 +24,9 @@ public class FailureReasonResolver {
 
     public AuthFailureReason resolve(Throwable ex) {
         Objects.requireNonNull(ex, "Exception cannot be null");
+        if (ex == null) {
+            return AuthFailureReason.SYSTEM_ERROR; // or SUCCESS
+        }
 
         Throwable root = unwrap(ex);
 

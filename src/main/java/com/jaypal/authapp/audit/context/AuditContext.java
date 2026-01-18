@@ -22,7 +22,7 @@ public final class AuditContext {
         final String ipAddress = extractIpAddress(request);
         final String userAgent = extractUserAgent(request);
 
-        return new AuditRequestContext(ipAddress, userAgent);
+        return new AuditRequestContext(ipAddress, userAgent, null);
     }
 
     public static AuditRequestContext fromThreadLocal() {
@@ -56,12 +56,3 @@ public final class AuditContext {
         return userAgent.length() > 512 ? userAgent.substring(0, 512) : userAgent;
     }
 }
-
-/*
-CHANGELOG:
-1. Added fromRequest() for manual context creation
-2. Added fromThreadLocal() as convenience method
-3. Made class non-instantiable with throwing constructor
-4. Kept utility methods for extracting IP and User-Agent
-5. This can now be used if you need to manually create audit context
-*/

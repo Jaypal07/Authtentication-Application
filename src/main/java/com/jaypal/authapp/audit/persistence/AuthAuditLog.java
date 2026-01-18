@@ -3,11 +3,13 @@ package com.jaypal.authapp.audit.persistence;
 import com.jaypal.authapp.audit.application.AuditRequestContext;
 import com.jaypal.authapp.audit.domain.*;
 import jakarta.persistence.*;
+import lombok.ToString;
 import org.hibernate.annotations.UuidGenerator;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@ToString
 @Entity
 @Table(
         name = "auth_audit_logs",

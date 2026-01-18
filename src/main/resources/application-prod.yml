@@ -150,23 +150,54 @@ management:
       simple:
         enabled: true
 
-#  /*
-#PRODUCTION IMPROVEMENTS:
-#  1. Increased HikariCP pool size (5 → 20) for production load
-#  2. Increased minimum idle (2 → 5) for better connection availability
-#  3. Enabled leak detection (60 seconds threshold)
-#  4. Added connection test query for health checks
-#  5. Changed ddl-auto from update to validate (safer for production)
-#  6. Disabled show-sql (performance + security)
-#7. Enabled Hibernate batch operations (batch_size: 20)
-#8. Added JDBC fetch size optimization (fetch_size: 50)
-#  9. Enabled order_inserts and order_updates for batching
-#  10. Added mail timeouts to prevent hanging
-#  11. Configured Caffeine cache properly
-#  12. Added scheduling pool for cleanup jobs
-#  13. Changed SameSite from Lax to Strict for production security
-#  14. Disabled error stack traces in responses (security)
-#  15. Added graceful shutdown
-#  16. Configured actuator endpoints for monitoring
-#  17. Added proper logging patterns
-#  */
+## ===============================
+## RATE LIMITING (PROD)
+## ===============================
+#rate-limit:
+#  endpoints:
+#    default:
+#      capacity: 100
+#      refill-per-second: 1
+#
+#    # Explicit login protection
+#    /api/v1/auth/login:
+#      capacity: 5
+#      refill-per-second: 0.02     # 1 attempt every 50 seconds
+#
+#    /api/v1/auth/register:
+#      capacity: 10
+#      refill-per-second: 0.2
+#
+#    /api/v1/auth/forgot-password:
+#      capacity: 5
+#      refill-per-second: 0.05
+#
+#    /api/v1/auth/reset-password:
+#      capacity: 5
+#      refill-per-second: 0.05
+#
+#  # Per-email brute force (PROD)
+#  login-email:
+#    capacity: 5
+#    refill-per-second: 0.01       # 1 attempt per 100 seconds
+#
+#  # Per-IP flood (PROD)
+#  login-ip:
+#    capacity: 20
+#    refill-per-second: 0.05       # 1 attempt per 20 seconds
+#
+#  # Invalid refresh abuse
+#  invalid-refresh:
+#    capacity: 10
+#    refill-per-second: 0.05
+#
+#  # Refresh rotation abuse
+#  refresh-rotate:
+#    capacity: 5
+#    refill-per-second: 0.02
+#    internal-cidrs:
+#      - 127.0.0.1/32
+#      - ::1/128
+#      - 10.0.0.0/8
+#      - 172.16.0.0/12
+#      - 192.168.0.0/16

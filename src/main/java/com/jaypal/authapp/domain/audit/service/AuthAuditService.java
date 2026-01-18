@@ -1,6 +1,5 @@
 package com.jaypal.authapp.domain.audit.service;
 
-import com.jaypal.authapp.audit.domain.*;
 import com.jaypal.authapp.dto.audit.AuditRequestContext;
 import com.jaypal.authapp.domain.audit.entity.*;
 import com.jaypal.authapp.domain.audit.repository.AuthAuditRepository;

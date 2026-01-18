@@ -3,7 +3,6 @@ package com.jaypal.authapp.domain.user.repository;
 import com.jaypal.authapp.domain.user.entity.Role;
 import com.jaypal.authapp.domain.user.entity.User;
 import com.jaypal.authapp.domain.user.entity.UserRole;
-import com.jaypal.authapp.user.model.*;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

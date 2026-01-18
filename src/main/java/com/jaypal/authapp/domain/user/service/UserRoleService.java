@@ -9,8 +9,6 @@ import com.jaypal.authapp.domain.user.entity.User;
 import com.jaypal.authapp.domain.user.entity.UserRole;
 import com.jaypal.authapp.domain.user.repository.RoleRepository;
 import com.jaypal.authapp.domain.user.repository.UserRoleRepository;
-import com.jaypal.authapp.user.model.*;
-import com.jaypal.authapp.user.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;

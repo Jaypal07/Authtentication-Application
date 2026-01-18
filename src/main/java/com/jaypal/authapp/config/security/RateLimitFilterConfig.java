@@ -1,5 +1,6 @@
-package com.jaypal.authapp.infrastructure.security.filter;
+package com.jaypal.authapp.config.security;
 
+import com.jaypal.authapp.infrastructure.security.filter.RateLimitFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;

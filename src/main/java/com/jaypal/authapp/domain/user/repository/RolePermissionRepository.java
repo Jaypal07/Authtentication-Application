@@ -4,7 +4,6 @@ import com.jaypal.authapp.domain.user.entity.Permission;
 import com.jaypal.authapp.domain.user.entity.PermissionType;
 import com.jaypal.authapp.domain.user.entity.Role;
 import com.jaypal.authapp.domain.user.entity.RolePermission;
-import com.jaypal.authapp.user.model.*;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

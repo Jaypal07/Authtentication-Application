@@ -4,7 +4,7 @@ import com.jaypal.authapp.dto.oauth.OAuthLoginResult;
 import com.jaypal.authapp.mapper.OAuthUserInfoMapperFactory;
 import com.jaypal.authapp.infrastructure.oauth.model.ValidatedOAuthUserInfo;
 import com.jaypal.authapp.infrastructure.security.jwt.JwtService;
-import com.jaypal.authapp.domain.token.vo.IssuedRefreshToken;
+import com.jaypal.authapp.domain.token.entity.IssuedRefreshToken;
 import com.jaypal.authapp.domain.token.service.RefreshTokenService;
 import com.jaypal.authapp.domain.user.service.PermissionService;
 import com.jaypal.authapp.domain.user.service.UserProvisioningService;

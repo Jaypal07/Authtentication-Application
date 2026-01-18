@@ -1,4 +1,4 @@
-package com.jaypal.authapp.domain.user.vo;
+package com.jaypal.authapp.domain.user.util;
 
 import java.net.URI;
 import java.net.URISyntaxException;

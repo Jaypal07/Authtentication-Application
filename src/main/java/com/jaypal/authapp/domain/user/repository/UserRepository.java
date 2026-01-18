@@ -42,7 +42,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<Long> findPermissionVersionById(UUID userId);
 
     @Query("""
-        select new com.jaypal.authapp.user.dto.UserResponseDto(
+        select new com.jaypal.authapp.dto.user.UserResponseDto(
             u.id,
             u.email,
             u.name,

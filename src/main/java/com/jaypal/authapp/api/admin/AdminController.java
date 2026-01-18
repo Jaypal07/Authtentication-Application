@@ -7,7 +7,6 @@ import com.jaypal.authapp.domain.user.service.AdminUserService;
 import com.jaypal.authapp.dto.user.AdminUserCreateRequest;
 import com.jaypal.authapp.dto.user.AdminUserRoleUpdateRequest;
 import com.jaypal.authapp.dto.user.UserResponseDto;
-import com.jaypal.authapp.user.dto.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;

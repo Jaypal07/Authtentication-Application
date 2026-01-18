@@ -1,4 +1,4 @@
-package com.jaypal.authapp.domain.token.vo;
+package com.jaypal.authapp.domain.token.entity;
 
 import java.time.Instant;
 

@@ -7,7 +7,7 @@ import com.jaypal.authapp.config.properties.FrontendProperties;
 import com.jaypal.authapp.config.properties.PasswordPolicy;
 import com.jaypal.authapp.infrastructure.security.jwt.JwtService;
 import com.jaypal.authapp.infrastructure.principal.AuthPrincipal;
-import com.jaypal.authapp.domain.token.vo.IssuedRefreshToken;
+import com.jaypal.authapp.domain.token.entity.IssuedRefreshToken;
 import com.jaypal.authapp.domain.token.service.RefreshTokenService;
 import com.jaypal.authapp.domain.token.exception.RefreshTokenExpiredException;
 import com.jaypal.authapp.domain.token.exception.RefreshTokenNotFoundException;

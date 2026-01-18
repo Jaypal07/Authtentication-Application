@@ -1,5 +1,8 @@
 package com.jaypal.authapp.user.api;
 
+import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.domain.AuditSubjectType;
+import com.jaypal.authapp.audit.domain.AuthAuditEvent;
 import com.jaypal.authapp.security.principal.AuthPrincipal;
 import com.jaypal.authapp.user.application.UserService;
 import com.jaypal.authapp.user.dto.UserResponseDto;
@@ -21,6 +24,10 @@ public class UserController {
 
     private final UserService userService;
 
+    @AuthAudit(
+            event = AuthAuditEvent.ACCOUNT_VIEWED_SELF,
+            subject = AuditSubjectType.USER_ID
+    )
     @GetMapping("/me")
     public ResponseEntity<UserResponseDto> getCurrentUser(
             @AuthenticationPrincipal AuthPrincipal principal
@@ -36,6 +43,10 @@ public class UserController {
         return ResponseEntity.ok(userService.getSelf(userId));
     }
 
+    @AuthAudit(
+            event = AuthAuditEvent.ACCOUNT_UPDATED_SELF,
+            subject = AuditSubjectType.USER_ID
+    )
     @PutMapping("/me")
     public ResponseEntity<UserResponseDto> updateCurrentUser(
             @AuthenticationPrincipal AuthPrincipal principal,
@@ -55,6 +66,10 @@ public class UserController {
         return ResponseEntity.ok(user);
     }
 
+    @AuthAudit(
+            event = AuthAuditEvent.ACCOUNT_UPDATED_SELF,
+            subject = AuditSubjectType.USER_ID
+    )
     @DeleteMapping("/me")
     public ResponseEntity<Void> deleteCurrentUser(
             @AuthenticationPrincipal AuthPrincipal principal

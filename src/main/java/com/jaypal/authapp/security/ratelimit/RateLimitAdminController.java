@@ -20,8 +20,9 @@ public class RateLimitAdminController {
     @PostMapping("/reset/login/ip")
     @PreAuthorize("hasAuthority('RATE_LIMIT_RESET')")
     @AuthAudit(
-            event = AuthAuditEvent.ADMIN_ACTION,
-            subject = AuditSubjectType.IP
+            event = AuthAuditEvent.ADMIN_ACTION_GENERIC,
+            subject = AuditSubjectType.IP,
+            subjectParam = "ip"
     )
     public ResponseEntity<Void> resetLoginIp(
             @RequestParam @NotBlank String ip
@@ -30,6 +31,11 @@ public class RateLimitAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_ACTION_GENERIC,
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "email"
+    )
     @PostMapping("/reset/login/email")
     @PreAuthorize("hasAuthority('RATE_LIMIT_RESET')")
     public ResponseEntity<Void> resetLoginEmail(
@@ -39,6 +45,11 @@ public class RateLimitAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_ACTION_GENERIC,
+            subject = AuditSubjectType.IP,
+            subjectParam = "ip"
+    )
     @PostMapping("/reset/ip/all")
     @PreAuthorize("hasAuthority('RATE_LIMIT_RESET')")
     public ResponseEntity<Void> resetAllIp(

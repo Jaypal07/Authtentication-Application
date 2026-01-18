@@ -44,7 +44,7 @@ public class AuthController {
     private final RateLimitProperties rateLimitProperties;
 
     @AuthAudit(
-            event = AuthAuditEvent.LOGIN,
+            event = AuthAuditEvent.LOGIN_SUCCESS,
             subject = AuditSubjectType.EMAIL,
             subjectParam = "request"
     )
@@ -113,7 +113,7 @@ public class AuthController {
     }
 
     @AuthAudit(
-            event = AuthAuditEvent.REGISTER,
+            event = AuthAuditEvent.REGISTER_SUCCESS,
             subject = AuditSubjectType.EMAIL,
             subjectParam = "request"
     )
@@ -130,6 +130,10 @@ public class AuthController {
 
     /* ===================== EMAIL VERIFICATION ===================== */
 
+    @AuthAudit(
+            event = AuthAuditEvent.EMAIL_VERIFICATION_SUCCESS,
+            subject = AuditSubjectType.SYSTEM
+    )
     @GetMapping("/email-verify")
     public ResponseEntity<Map<String, String>> verifyEmail(
             @RequestParam
@@ -147,6 +151,11 @@ public class AuthController {
         ));
     }
 
+    @AuthAudit(
+            event = AuthAuditEvent.EMAIL_VERIFICATION_RESEND,
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "email"
+    )
     @PostMapping("/email-verify/resend")
     public ResponseEntity<Map<String, String>> resendVerification(
             @RequestParam @NotBlank String email
@@ -163,7 +172,12 @@ public class AuthController {
 
     /* ===================== PASSWORD RESET ===================== */
 
-    @PostMapping("/password-reset")
+    @AuthAudit(
+            event = AuthAuditEvent.PASSWORD_RESET_REQUESTED,
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "email"
+    )
+    @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> initiatePasswordReset(
             @RequestParam @NotBlank String email
     ) {
@@ -177,6 +191,10 @@ public class AuthController {
         ));
     }
 
+    @AuthAudit(
+            event = AuthAuditEvent.PASSWORD_RESET_SUCCESS,
+            subject = AuditSubjectType.SYSTEM
+    )
     @PostMapping("/password-reset/confirm")
     public ResponseEntity<Map<String, String>> resetPassword(
             @RequestParam
@@ -197,9 +215,8 @@ public class AuthController {
     }
 
     @AuthAudit(
-            event = AuthAuditEvent.TOKEN_REFRESHED,
-            subject = AuditSubjectType.IP,
-            subjectParam = "request"
+            event = AuthAuditEvent.TOKEN_REFRESH_SUCCESS,
+            subject = AuditSubjectType.USER_ID
     )
     @PostMapping("/refresh")
     public ResponseEntity<TokenResponse> refresh(
@@ -234,7 +251,7 @@ public class AuthController {
 
 
     @AuthAudit(
-            event = AuthAuditEvent.LOGOUT,
+            event = AuthAuditEvent.LOGOUT_SINGLE_SESSION,
             subject = AuditSubjectType.USER_ID,
             subjectParam = "principal"
     )

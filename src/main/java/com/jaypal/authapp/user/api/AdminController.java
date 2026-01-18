@@ -1,5 +1,8 @@
 package com.jaypal.authapp.user.api;
 
+import com.jaypal.authapp.audit.annotation.AuthAudit;
+import com.jaypal.authapp.audit.domain.AuditSubjectType;
+import com.jaypal.authapp.audit.domain.AuthAuditEvent;
 import com.jaypal.authapp.user.application.AdminUserService;
 import com.jaypal.authapp.user.dto.*;
 import jakarta.validation.Valid;
@@ -24,6 +27,10 @@ public class AdminController {
 
     private final AdminUserService adminUserService;
 
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_USER_CREATED,
+            subject = AuditSubjectType.USER_ID
+    )
     @PostMapping
     public ResponseEntity<UserResponseDto> createUser(
             @RequestBody @Valid AdminUserCreateRequest request
@@ -34,12 +41,21 @@ public class AdminController {
     }
 
 
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_USER_VIEWED,
+            subject = AuditSubjectType.USER_ID,
+            subjectParam = "userId"
+    )
     @GetMapping("/{userId}")
     public ResponseEntity<UserResponseDto> getUser(@PathVariable UUID userId) {
         return ResponseEntity.ok(adminUserService.getUserById(userId));
     }
 
-
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_USER_VIEWED,
+            subject = AuditSubjectType.EMAIL,
+            subjectParam = "email"
+    )
     @GetMapping("/by-email")
     public ResponseEntity<UserResponseDto> getUserByEmail(
             @RequestParam
@@ -50,13 +66,20 @@ public class AdminController {
         return ResponseEntity.ok(adminUserService.getUserByEmail(email));
     }
 
-
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_USER_LISTED,
+            subject = AuditSubjectType.SYSTEM
+    )
     @GetMapping
     public ResponseEntity<List<UserResponseDto>> getAllUsers() {
         return ResponseEntity.ok(adminUserService.getAllUsers());
     }
 
-
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_ROLE_MODIFIED,
+            subject = AuditSubjectType.USER_ID,
+            subjectParam = "userId"
+    )
     @PutMapping("/{userId}/roles")
     public ResponseEntity<UserResponseDto> updateUserRoles(
             @PathVariable UUID userId,
@@ -69,7 +92,11 @@ public class AdminController {
         return ResponseEntity.ok(user);
     }
 
-
+    @AuthAudit(
+            event = AuthAuditEvent.ADMIN_USER_DELETED,
+            subject = AuditSubjectType.USER_ID,
+            subjectParam = "userId"
+    )
     @DeleteMapping("/{userId}")
     public ResponseEntity<Map<String, Serializable>> disableUser(
             @PathVariable UUID userId

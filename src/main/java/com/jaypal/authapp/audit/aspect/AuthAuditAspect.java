@@ -109,41 +109,41 @@ public class AuthAuditAspect {
 
     private AuditCategory resolveCategory(AuthAuditEvent event) {
         return switch (event) {
-            case LOGIN, LOGOUT, REGISTER,
-                 EMAIL_VERIFY, EMAIL_VERIFICATION_RESEND,
-                 OAUTH_LOGIN,
-                 TOKEN_ISSUED, TOKEN_REFRESHED, TOKEN_REVOKED
+
+            case LOGIN_SUCCESS, LOGIN_FAILURE,
+                 LOGOUT_SINGLE_SESSION, LOGOUT_ALL_SESSIONS,
+                 REGISTER_SUCCESS, REGISTER_FAILURE,
+                 EMAIL_VERIFICATION_SUCCESS, EMAIL_VERIFICATION_FAILURE,
+                 EMAIL_VERIFICATION_RESEND,
+                 OAUTH_LOGIN_SUCCESS, OAUTH_LOGIN_FAILURE,
+                 TOKEN_ISSUED, TOKEN_REFRESH_SUCCESS, TOKEN_REFRESH_FAILURE,
+                 TOKEN_REVOKED_SINGLE, TOKEN_REVOKED_ALL
                     -> AuditCategory.AUTHENTICATION;
 
-            case PASSWORD_CHANGE,
-                 PASSWORD_RESET_REQUEST,
-                 PASSWORD_RESET_RESULT,
-                 ACCOUNT_UPDATED,
-                 ACCOUNT_DISABLED
+            case TOKEN_INTROSPECTION_SUCCESS, TOKEN_INTROSPECTION_FAILURE, RATE_LIMIT_EXCEEDED,
+                 SECURITY_POLICY_VIOLATION, SYSTEM_ERROR
+                    -> AuditCategory.SYSTEM;
+
+            case PASSWORD_CHANGE_SUCCESS, PASSWORD_CHANGE_FAILURE,
+                 PASSWORD_RESET_REQUESTED, PASSWORD_RESET_REQUEST_FAILED,
+                 PASSWORD_RESET_SUCCESS, PASSWORD_RESET_FAILURE,
+                 ACCOUNT_VIEWED_SELF, ACCOUNT_UPDATED_SELF,
+                 ACCOUNT_DISABLED_BY_ADMIN, ACCOUNT_DELETED_SELF,
+                 ACCOUNT_LOCKED, ACCOUNT_UNLOCKED
                     -> AuditCategory.ACCOUNT;
 
-            case ROLE_ASSIGNED,
-                 ROLE_REMOVED,
-                 PERMISSION_GRANTED,
-                 PERMISSION_REVOKED
+            case ROLE_ASSIGNED, ROLE_REMOVED,
+                 PERMISSION_GRANTED, PERMISSION_REVOKED,
+                 ACCESS_DENIED
                     -> AuditCategory.AUTHORIZATION;
 
-            case ADMIN_USER_CREATED,
-                 ADMIN_USER_UPDATED,
-                 ADMIN_USER_DELETED,
-                 TOKEN_INTROSPECTED,
-                 ADMIN_ACTION
+            case ADMIN_USER_CREATED, ADMIN_USER_UPDATED,
+                 ADMIN_USER_DELETED, ADMIN_USER_VIEWED,
+                 ADMIN_USER_LISTED, ADMIN_ROLE_MODIFIED,
+                 ADMIN_PERMISSION_MODIFIED, ADMIN_ACTION_GENERIC
                     -> AuditCategory.ADMIN;
+
         };
     }
-}
 
-/*
-CHANGELOG:
-1. CRITICAL FIX: Now retrieves context from AuditContextHolder instead of passing null
-2. Added try-catch around aspect logic to prevent audit failures from breaking business logic
-3. Added resolveSubjectSafely for failure cases (falls back to ANONYMOUS)
-4. Added comprehensive error logging for debugging
-5. Context is now properly propagated from HTTP filter through async thread
-6. Added @Slf4j for logging
-*/
+}

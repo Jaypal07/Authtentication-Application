@@ -23,16 +23,16 @@ public class AuthLogoutController {
     private final AuthService authService;
 
     @AuthAudit(
-            event = AuthAuditEvent.TOKEN_REVOKED,
+            event = AuthAuditEvent.LOGOUT_ALL_SESSIONS,
             subject = AuditSubjectType.USER_ID,
-            provider = AuthProvider.SYSTEM,
-            subjectParam = "principal"
+            subjectParam = "principal",
+            provider = AuthProvider.SYSTEM
     )
     @PostMapping("/logout-all")
     public ResponseEntity<Void> logoutAll(
             @AuthenticationPrincipal AuthPrincipal principal
     ) {
-        if (principal == null || principal.getUserId() == null) {
+        if (principal == null) {
             log.warn("Logout-all called without authenticated principal");
             return ResponseEntity.status(401).build();
         }

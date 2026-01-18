@@ -141,6 +141,13 @@ public class AuthAuditService {
         Objects.requireNonNull(subject, "Subject cannot be null");
         Objects.requireNonNull(provider, "Provider cannot be null");
 
+        if (outcome == AuditOutcome.FAILURE && !eventAllowsFailure(event)) {
+            throw new IllegalArgumentException(
+                    "Failure not allowed for event: " + event
+            );
+        }
+
+
         if (outcome == AuditOutcome.FAILURE && failureReason == null) {
             log.error("AUDIT invariant violation | FAILURE without failureReason event={}", event);
             throw new IllegalArgumentException(
@@ -180,4 +187,20 @@ public class AuthAuditService {
                 ? failureReason.getSeverity()
                 : AuditSeverity.MEDIUM;
     }
+
+    private boolean eventAllowsFailure(AuthAuditEvent event) {
+        return switch (event) {
+            case LOGIN_SUCCESS,
+                 REGISTER_SUCCESS,
+                 EMAIL_VERIFICATION_SUCCESS,
+                 OAUTH_LOGIN_SUCCESS,
+                 TOKEN_REFRESH_SUCCESS,
+                 PASSWORD_CHANGE_SUCCESS,
+                 PASSWORD_RESET_SUCCESS,
+                 TOKEN_INTROSPECTION_SUCCESS
+                    -> false;
+            default -> true;
+        };
+    }
+
 }

@@ -95,7 +95,4 @@ public class AuthAuditLog {
     public UUID getId() {
         return id;
     }
-
-    public void warn(String s, AuthAuditEvent event, AuditSubjectType type, AuthFailureReason failureReason, String s1) {
-    }
 }

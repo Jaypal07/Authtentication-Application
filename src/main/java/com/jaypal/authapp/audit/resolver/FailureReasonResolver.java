@@ -2,12 +2,12 @@ package com.jaypal.authapp.audit.resolver;
 
 import com.jaypal.authapp.audit.domain.AuthFailureReason;
 import com.jaypal.authapp.auth.exception.*;
+import com.jaypal.authapp.oauth.handler.OAuthAuthenticationException;
 import com.jaypal.authapp.security.ratelimit.RateLimitExceededException;
 import com.jaypal.authapp.token.exception.*;
 import com.jaypal.authapp.user.exception.*;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.*;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -24,21 +24,16 @@ public class FailureReasonResolver {
 
     public AuthFailureReason resolve(Throwable ex) {
         Objects.requireNonNull(ex, "Exception cannot be null");
-        if (ex == null) {
-            return AuthFailureReason.SYSTEM_ERROR; // or SUCCESS
-        }
 
         Throwable root = unwrap(ex);
 
-        // ---- AUTHENTICATION ----
-        if (root instanceof BadCredentialsException ||
-                root instanceof InvalidCredentialsException ||
-                root instanceof UsernameNotFoundException) {
+        /* ===================== AUTHENTICATION ===================== */
+
+        if (root instanceof BadCredentialsException || root instanceof UsernameNotFoundException) {
             return AuthFailureReason.INVALID_CREDENTIALS;
         }
 
-        if (root instanceof DisabledException ||
-                root instanceof UserAccountDisabledException) {
+        if (root instanceof DisabledException) {
             return AuthFailureReason.ACCOUNT_DISABLED;
         }
 
@@ -46,13 +41,19 @@ public class FailureReasonResolver {
             return AuthFailureReason.ACCOUNT_LOCKED;
         }
 
-        if (root instanceof CredentialsExpiredException) {
-            return AuthFailureReason.TOKEN_EXPIRED;
+        /* ===================== OAUTH ===================== */
+
+        if (root instanceof OAuthAuthenticationException) {
+            return AuthFailureReason.OAUTH_PROVIDER_ERROR;
         }
 
-        // ---- TOKEN ----
+        /* ===================== TOKEN ===================== */
+
+        if (root instanceof MissingRefreshTokenException) {
+            return AuthFailureReason.TOKEN_MISSING;
+        }
+
         if (root instanceof RefreshTokenExpiredException ||
-                root instanceof PasswordResetTokenExpiredException ||
                 root instanceof VerificationTokenExpiredException) {
             return AuthFailureReason.TOKEN_EXPIRED;
         }
@@ -61,20 +62,36 @@ public class FailureReasonResolver {
             return AuthFailureReason.TOKEN_REVOKED;
         }
 
-        if (root instanceof RefreshTokenNotFoundException ||
-                root instanceof InvalidRefreshTokenException ||
-                root instanceof PasswordResetTokenInvalidException ||
+        if (root instanceof InvalidRefreshTokenException ||
                 root instanceof VerificationTokenInvalidException) {
             return AuthFailureReason.TOKEN_INVALID;
         }
 
-        if (root instanceof MissingRefreshTokenException) {
-            return AuthFailureReason.TOKEN_MISSING;
+        if (root instanceof RefreshTokenReuseDetectedException) {
+            return AuthFailureReason.TOKEN_REFRESH_REUSED;
         }
 
-        // ---- REGISTRATION / ACCOUNT ----
-        if (root instanceof EmailAlreadyExistsException ||
-                root instanceof DataIntegrityViolationException) {
+        /* ===================== PASSWORD ===================== */
+
+        if (root instanceof PasswordPolicyViolationException) {
+            return AuthFailureReason.PASSWORD_POLICY_VIOLATION;
+        }
+
+        if (root instanceof PasswordResetTokenInvalidException) {
+            return AuthFailureReason.PASSWORD_RESET_TOKEN_INVALID;
+        }
+
+        if (root instanceof PasswordResetTokenExpiredException) {
+            return AuthFailureReason.PASSWORD_RESET_TOKEN_EXPIRED;
+        }
+
+        if (root instanceof PasswordResetTokenUsedException) {
+            return AuthFailureReason.PASSWORD_RESET_TOKEN_USED;
+        }
+
+        /* ===================== EMAIL / REGISTRATION ===================== */
+
+        if (root instanceof EmailAlreadyExistsException) {
             return AuthFailureReason.EMAIL_ALREADY_EXISTS;
         }
 
@@ -86,32 +103,38 @@ public class FailureReasonResolver {
             return AuthFailureReason.EMAIL_NOT_REGISTERED;
         }
 
-        if (root instanceof PasswordPolicyViolationException) {
-            return AuthFailureReason.PASSWORD_POLICY_VIOLATION;
-        }
+        /* ===================== AUTHORIZATION ===================== */
 
-        // ---- AUTHORIZATION ----
         if (root instanceof AccessDeniedException) {
             return AuthFailureReason.ACCESS_DENIED;
         }
 
-        // ---- VALIDATION ----
+        /* ===================== RATE LIMIT ===================== */
+
+        if (root instanceof RateLimitExceededException) {
+            return AuthFailureReason.RATE_LIMIT_EXCEEDED;
+        }
+
+        /* ===================== VALIDATION ===================== */
+
         if (root instanceof MethodArgumentNotValidException ||
                 root instanceof ConstraintViolationException ||
                 root instanceof IllegalArgumentException) {
             return AuthFailureReason.VALIDATION_FAILED;
         }
-
-        // ---- RATE LIMITING ----
-        if (root instanceof RateLimitExceededException) {
-            return AuthFailureReason.RATE_LIMIT_EXCEEDED;
+        if (root instanceof CredentialsExpiredException) {
+            return AuthFailureReason.PASSWORD_POLICY_VIOLATION;
         }
 
-        // ---- NOT FOUND ----
+
+        /* ===================== NOT FOUND ===================== */
+
         if (root instanceof ResourceNotFoundException ||
                 root instanceof AuthenticatedUserMissingException) {
-            return AuthFailureReason.USER_NOT_FOUND;
+            return AuthFailureReason.ADMIN_TARGET_NOT_FOUND;
         }
+
+        /* ===================== FALLBACK ===================== */
 
         log.warn(
                 "Unmapped exception type for audit: {} (original: {})",
@@ -119,12 +142,11 @@ public class FailureReasonResolver {
                 ex.getClass().getName()
         );
 
-        // ---- FALLBACK (silent & intentional) ----
         return AuthFailureReason.SYSTEM_ERROR;
     }
 
     /**
-     * Unwraps Spring Security and nested exceptions safely.
+     * Unwraps nested and Spring Security exceptions safely.
      */
     private Throwable unwrap(Throwable ex) {
         Set<Throwable> visited = new HashSet<>();
@@ -147,4 +169,3 @@ public class FailureReasonResolver {
         return current != null ? current : ex;
     }
 }
-

@@ -1,5 +1,8 @@
 package com.jaypal.authapp.oauth.handler;
 
+import com.jaypal.authapp.audit.application.AuthAuditService;
+import com.jaypal.authapp.audit.context.AuditContextHolder;
+import com.jaypal.authapp.audit.domain.*;
 import com.jaypal.authapp.auth.infrastructure.cookie.CookieService;
 import com.jaypal.authapp.config.FrontendProperties;
 import com.jaypal.authapp.oauth.application.OAuthLoginService;
@@ -26,6 +29,7 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
     private final OAuthLoginService oauthLoginService;
     private final CookieService cookieService;
     private final FrontendProperties frontendProperties;
+    private final AuthAuditService auditService;
 
     @Override
     public void onAuthenticationSuccess(
@@ -42,6 +46,16 @@ public class OAuth2SuccessHandler implements AuthenticationSuccessHandler {
             attachSecurityArtifacts(response, loginResult);
 
             final String redirectUrl = getSuccessRedirectUrl();
+            auditService.record(
+                    AuditCategory.AUTHENTICATION,
+                    AuthAuditEvent.OAUTH_LOGIN_SUCCESS,
+                    AuditOutcome.SUCCESS,
+                    AuditSubject.anonymous(),
+                    null,
+                    AuthProvider.SYSTEM,
+                    AuditContextHolder.getContext()
+            );
+
 
             log.info("OAuth2 authentication successful - redirecting to: {}", redirectUrl);
 

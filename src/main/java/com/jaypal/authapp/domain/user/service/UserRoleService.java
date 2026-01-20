@@ -1,7 +1,7 @@
 package com.jaypal.authapp.domain.user.service;
 
-import com.jaypal.authapp.domain.audit.service.AuthAuditService;
 import com.jaypal.authapp.domain.audit.entity.*;
+import com.jaypal.authapp.domain.audit.service.AuthAuditService;
 import com.jaypal.authapp.domain.token.service.RefreshTokenService;
 import com.jaypal.authapp.domain.user.entity.Role;
 import com.jaypal.authapp.domain.user.entity.RoleType;
@@ -12,6 +12,8 @@ import com.jaypal.authapp.domain.user.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -35,6 +37,10 @@ public class UserRoleService {
     private final AuthAuditService auditService;
     private final CacheManager cacheManager;
 
+    /* ============================================================
+       PUBLIC API
+       ============================================================ */
+
     @Transactional
     public void assignRole(User user, RoleType roleType) {
         Objects.requireNonNull(user, "User cannot be null");
@@ -56,23 +62,21 @@ public class UserRoleService {
             throw new IllegalStateException("User must have at least one role");
         }
 
-
         userRoleRepository.deleteByUserAndRole(user, role);
-        // ✅ CRITICAL: keep persistence context consistent
         user.getUserRoles().removeIf(ur -> ur.getRole().equals(role));
 
         user.bumpPermissionVersion();
-        auditRoleRemoval(user, roleType);
+        auditRoleRemoval(user);
 
         registerPostCommitActionsOnce(user.getId());
 
         log.info("Role removed: user={}, role={}", user.getId(), roleType);
     }
 
-    /**
-     * INTERNAL USE ONLY
-     * Does NOT register post-commit hooks.
-     */
+    /* ============================================================
+       INTERNAL
+       ============================================================ */
+
     @Transactional
     void assignRoleInternal(User user, RoleType roleType) {
         Role role = roleRepository.findByType(roleType)
@@ -95,13 +99,15 @@ public class UserRoleService {
                 .build();
 
         userRoleRepository.save(userRole);
-
-        // 🔑 THIS IS THE MISSING LINE
         user.getUserRoles().add(userRole);
 
         user.bumpPermissionVersion();
-        auditRoleAssignment(user, roleType);
+        auditRoleAssignment(user);
     }
+
+    /* ============================================================
+       POST COMMIT
+       ============================================================ */
 
     private void registerPostCommitActionsOnce(UUID userId) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -133,27 +139,49 @@ public class UserRoleService {
         }
     }
 
-    private void auditRoleAssignment(User user, RoleType roleType) {
+    /* ============================================================
+       AUDIT
+       ============================================================ */
+
+    private void auditRoleAssignment(User targetUser) {
         auditService.record(
                 AuditCategory.AUTHORIZATION,
                 AuthAuditEvent.ROLE_ASSIGNED,
                 AuditOutcome.SUCCESS,
-                AuditSubject.userId(user.getId().toString()),
+                resolveActor(),                               // ✅ ACTOR
+                AuditSubject.userId(targetUser.getId().toString()), // ✅ SUBJECT
                 null,
                 AuthProvider.SYSTEM,
                 null
         );
     }
 
-    private void auditRoleRemoval(User user, RoleType roleType) {
+    private void auditRoleRemoval(User targetUser) {
         auditService.record(
                 AuditCategory.AUTHORIZATION,
                 AuthAuditEvent.ROLE_REMOVED,
                 AuditOutcome.SUCCESS,
-                AuditSubject.userId(user.getId().toString()),
+                resolveActor(),                               // ✅ ACTOR
+                AuditSubject.userId(targetUser.getId().toString()), // ✅ SUBJECT
                 null,
                 AuthProvider.SYSTEM,
                 null
         );
+    }
+
+    /* ============================================================
+       ACTOR RESOLUTION
+       ============================================================ */
+
+    private AuditActor resolveActor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication != null && authentication.isAuthenticated()
+                && authentication.getPrincipal() instanceof User principal) {
+
+            return AuditActor.userId(principal.getId().toString());
+        }
+
+        return AuditActor.system();
     }
 }

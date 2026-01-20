@@ -5,6 +5,7 @@ import com.jaypal.authapp.domain.audit.entity.*;
 import com.jaypal.authapp.domain.audit.service.AuthAuditService;
 import com.jaypal.authapp.dto.audit.AuditRequestContext;
 import com.jaypal.authapp.exception.auth.EmailAlreadyVerifiedException;
+import com.jaypal.authapp.exception.auth.EmailNotRegisteredException;
 import com.jaypal.authapp.infrastructure.audit.context.AuditContextHolder;
 import com.jaypal.authapp.infrastructure.audit.resolver.FailureReasonResolver;
 import com.jaypal.authapp.infrastructure.audit.resolver.IdentityResolver;
@@ -65,6 +66,17 @@ public class AuthAuditAspect {
             return;
         }
 
+        // Idempotent NO_OP: Email is not register
+        if (ex instanceof EmailNotRegisteredException) {
+            log.info(
+                    "AuthAudit NO_OP (idempotent): event={}, reason=EMAIL_NOT_REGISTERED",
+                    authAudit.event()
+            );
+
+            record(joinPoint, authAudit, null, null, AuditOutcome.NO_OP);
+            return;
+        }
+
         AuthFailureReason reason = failureReasonResolver.resolve(ex);
 
         log.debug(
@@ -95,20 +107,25 @@ public class AuthAuditAspect {
             AuditRequestContext context = AuditContextHolder.getContext();
             AuditCategory category = resolveCategory(authAudit.event());
 
+            AuditActor actor = resolveActor();
+
             auditService.record(
                     category,
                     authAudit.event(),
                     outcome,
+                    actor,
                     subject,
                     failureReason,
                     authAudit.provider(),
                     context
             );
 
+
             log.info(
-                    "Audit recorded: event={}, outcome={}, category={}, subjectType={}",
+                    "Audit recorded: event={}, outcome={}, actor{} category={}, subjectType={}",
                     authAudit.event(),
                     outcome,
+                    actor,
                     category,
                     subject.getType()
             );
@@ -144,6 +161,15 @@ public class AuthAuditAspect {
         }
 
         return AuditOutcome.SUCCESS;
+    }
+
+
+    private AuditActor resolveActor() {
+        UUID userId = identityResolver.fromSecurityContext();
+        if (userId != null) {
+            return AuditActor.userId(userId.toString());
+        }
+        return AuditActor.system();
     }
 
 

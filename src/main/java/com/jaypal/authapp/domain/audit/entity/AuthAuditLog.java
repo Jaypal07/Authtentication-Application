@@ -16,31 +16,39 @@ import java.util.UUID;
                 @Index(name = "idx_audit_created_at", columnList = "created_at"),
                 @Index(name = "idx_audit_event", columnList = "event"),
                 @Index(name = "idx_audit_subject_type", columnList = "subject_type"),
+                @Index(name = "idx_audit_actor_type", columnList = "actor_type"),
                 @Index(name = "idx_audit_outcome", columnList = "outcome")
         }
 )
 public class AuthAuditLog {
 
     @Id
-    @GeneratedValue()
+    @GeneratedValue
     @UuidGenerator(style = UuidGenerator.Style.TIME)
     private UUID id;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
     private AuditCategory category;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
     private AuthAuditEvent event;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
     private AuditOutcome outcome;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
     private AuditSeverity severity;
+
+    /* ================= ACTOR ================= */
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "actor_type", nullable = false, updatable = false)
+    private AuditSubjectType actorType;
+
+    @Column(name = "actor_identifier", updatable = false)
+    private String actorIdentifier;
+
+    /* ================= SUBJECT ================= */
 
     @Enumerated(EnumType.STRING)
     @Column(name = "subject_type", nullable = false, updatable = false)
@@ -49,21 +57,16 @@ public class AuthAuditLog {
     @Column(name = "subject_identifier", updatable = false)
     private String subjectIdentifier;
 
+    /* ================= META ================= */
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "failure_reason", updatable = false)
     private AuthFailureReason failureReason;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, updatable = false)
     private AuthProvider provider;
 
-    @Column(updatable = false)
     private String ipAddress;
-
-    @Column(updatable = false)
     private String userAgent;
-
-    @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
     protected AuthAuditLog() {}
@@ -73,6 +76,7 @@ public class AuthAuditLog {
             AuthAuditEvent event,
             AuditOutcome outcome,
             AuditSeverity severity,
+            AuditActor actor,
             AuditSubject subject,
             AuthFailureReason failureReason,
             AuthProvider provider,
@@ -82,8 +86,13 @@ public class AuthAuditLog {
         this.event = event;
         this.outcome = outcome;
         this.severity = severity;
+
+        this.actorType = actor.type();
+        this.actorIdentifier = actor.identifier();
+
         this.subjectType = subject.getType();
         this.subjectIdentifier = subject.getIdentifier();
+
         this.failureReason = failureReason;
         this.provider = provider;
         this.ipAddress = context != null ? context.ipAddress() : null;

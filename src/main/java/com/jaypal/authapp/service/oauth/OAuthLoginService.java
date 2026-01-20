@@ -71,6 +71,7 @@ public class OAuthLoginService {
         log.info("OAuth login successful - provider: {}, userId: {}", provider, user.getId());
 
         return new OAuthLoginResult(
+                user.getId(),
                 accessToken,
                 refreshToken.token(),
                 refreshToken.expiresAt().getEpochSecond()

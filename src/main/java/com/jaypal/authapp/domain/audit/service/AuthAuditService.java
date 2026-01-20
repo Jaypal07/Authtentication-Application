@@ -30,6 +30,7 @@ public class AuthAuditService {
             AuditCategory category,
             AuthAuditEvent event,
             AuditOutcome outcome,
+            AuditActor actor,
             AuditSubject subject,
             AuthFailureReason failureReason,
             AuthProvider provider,
@@ -39,11 +40,12 @@ public class AuthAuditService {
 
         if (log.isDebugEnabled()) {
             log.debug(
-                    "AUDIT invoked | thread={} category={} event={} outcome={} subject={} failureReason={} provider={}",
+                    "AUDIT invoked | thread={} category={} event={} outcome={} actor{} subject={} failureReason={} provider={}",
                     thread,
                     category,
                     event,
                     outcome,
+                    actor,
                     subject,
                     failureReason,
                     provider
@@ -62,11 +64,13 @@ public class AuthAuditService {
                     event,
                     outcome,
                     severity,
+                    actor,
                     subject,
                     failureReason,
                     provider,
                     context
             );
+
 
             AuthAuditLog saved = repository.save(auditLog);
 
@@ -116,11 +120,6 @@ public class AuthAuditService {
         Objects.requireNonNull(subject, "Audit subject must not be null");
         Objects.requireNonNull(provider, "Auth provider must not be null");
 
-        // NO_OP is allowed for any event
-        if (outcome == AuditOutcome.FAILURE && !eventAllowsFailure(event)) {
-            throw new IllegalArgumentException("Failure outcome not allowed for event: " + event);
-        }
-
         if (outcome == AuditOutcome.FAILURE && failureReason == null) {
             throw new IllegalArgumentException("Failure outcome requires failureReason for event: " + event);
         }
@@ -148,25 +147,4 @@ public class AuthAuditService {
         };
     }
 
-    /* ============================================================
-       EVENT RULES
-       ============================================================ */
-
-    /**
-     * Events that represent terminal success states
-     * and must never be recorded as FAILURE.
-     */
-    private boolean eventAllowsFailure(AuthAuditEvent event) {
-        return switch (event) {
-            case LOGIN,
-                 REGISTER,
-                 EMAIL_VERIFICATION,
-                 OAUTH_LOGIN,
-                 TOKEN_REFRESH,
-                 PASSWORD_CHANGE,
-                 PASSWORD_RESET,
-                 TOKEN_INTROSPECTION -> false;
-            default -> true;
-        };
-    }
 }

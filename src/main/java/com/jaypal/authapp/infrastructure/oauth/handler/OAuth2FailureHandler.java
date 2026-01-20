@@ -45,11 +45,43 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
 
         final String redirectUrl = buildFailureRedirectUrl(errorCode, errorMessage);
 
-        log.info("OAuth2 authentication failed - provider: {}, error: {} - redirecting to: {}",
-                provider, errorCode, redirectUrl);
+        log.info(
+                "OAuth2 authentication failed - provider: {}, error: {} - redirecting to: {}",
+                provider, errorCode, redirectUrl
+        );
 
         response.sendRedirect(redirectUrl);
     }
+
+    /* ============================================================
+       AUDIT
+       ============================================================ */
+
+    private void auditFailure(String provider, AuthenticationException exception) {
+        try {
+            final AuditRequestContext context = AuditContextHolder.getContext();
+            final AuthProvider auditProvider = parseAuditProvider(provider);
+            final AuthFailureReason reason = mapFailureReason(exception);
+
+            auditService.record(
+                    AuditCategory.AUTHENTICATION,
+                    AuthAuditEvent.OAUTH_LOGIN,
+                    AuditOutcome.FAILURE,
+                    AuditActor.system(),          // ✅ ACTOR
+                    AuditSubject.anonymous(),     // ✅ SUBJECT
+                    reason,
+                    auditProvider,
+                    context
+            );
+
+        } catch (Exception auditEx) {
+            log.error("Failed to audit OAuth failure", auditEx);
+        }
+    }
+
+    /* ============================================================
+       HELPERS
+       ============================================================ */
 
     private String extractProvider(HttpServletRequest request) {
         final String requestUri = request.getRequestURI();
@@ -90,31 +122,13 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
     }
 
     private void logFailure(String provider, String errorCode, AuthenticationException exception) {
-        log.warn("OAuth2 authentication failure - provider: {}, error: {}, message: {}",
-                provider, errorCode, exception.getMessage());
+        log.warn(
+                "OAuth2 authentication failure - provider: {}, error: {}, message: {}",
+                provider, errorCode, exception.getMessage()
+        );
 
         if (log.isDebugEnabled()) {
             log.debug("OAuth2 authentication failure details", exception);
-        }
-    }
-
-    private void auditFailure(String provider, AuthenticationException exception) {
-        try {
-            final AuditRequestContext context = AuditContextHolder.getContext();
-            final AuthProvider auditProvider = parseAuditProvider(provider);
-            final AuthFailureReason reason = mapFailureReason(exception);
-
-            auditService.record(
-                    AuditCategory.AUTHENTICATION,
-                    AuthAuditEvent.OAUTH_LOGIN,
-                    AuditOutcome.FAILURE,
-                    AuditSubject.anonymous(),
-                    reason,
-                    auditProvider,
-                    context
-            );
-        } catch (Exception auditEx) {
-            log.error("Failed to audit OAuth failure", auditEx);
         }
     }
 
@@ -132,9 +146,12 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
 
             if (errorCode != null) {
                 return switch (errorCode) {
-                    case "invalid_token", "invalid_grant" -> AuthFailureReason.TOKEN_INVALID;
-                    case "access_denied" -> AuthFailureReason.ACCESS_DENIED;
-                    default -> AuthFailureReason.INVALID_CREDENTIALS;
+                    case "invalid_token", "invalid_grant" ->
+                            AuthFailureReason.TOKEN_INVALID;
+                    case "access_denied" ->
+                            AuthFailureReason.ACCESS_DENIED;
+                    default ->
+                            AuthFailureReason.INVALID_CREDENTIALS;
                 };
             }
         }
@@ -147,7 +164,8 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
 
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalStateException(
-                    "Frontend failure redirect URL is not configured. Set 'app.frontend.failure-redirect'");
+                    "Frontend failure redirect URL is not configured. Set 'app.frontend.failure-redirect'"
+            );
         }
 
         final String encodedErrorCode = URLEncoder.encode(errorCode, StandardCharsets.UTF_8);
@@ -155,7 +173,9 @@ public class OAuth2FailureHandler implements AuthenticationFailureHandler {
 
         final String separator = baseUrl.contains("?") ? "&" : "?";
 
-        return String.format("%s%serror=%s&message=%s",
-                baseUrl, separator, encodedErrorCode, encodedMessage);
+        return String.format(
+                "%s%serror=%s&message=%s",
+                baseUrl, separator, encodedErrorCode, encodedMessage
+        );
     }
 }

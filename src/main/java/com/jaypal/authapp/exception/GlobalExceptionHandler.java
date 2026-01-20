@@ -5,8 +5,11 @@ import com.jaypal.authapp.domain.user.exception.EmailAlreadyExistsException;
 import com.jaypal.authapp.domain.user.exception.InvalidRoleOperationException;
 import com.jaypal.authapp.domain.user.exception.ResourceNotFoundException;
 import com.jaypal.authapp.domain.user.exception.UserAccountDisabledException;
-import com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException;
+import com.jaypal.authapp.exception.audit.AuditLogger;
 import com.jaypal.authapp.exception.auth.*;
+import com.jaypal.authapp.exception.response.ProblemResponseBuilder;
+import com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
@@ -20,7 +23,6 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -30,65 +32,36 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.*;
 
+/**
+ * Global exception handler for the authentication application.
+ * Provides centralized error handling with audit logging and RFC 7807 Problem Details responses.
+ */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
     private static final String TYPE_ABOUT_BLANK = "about:blank";
 
-    /* =====================
-       CORE PROBLEM RESPONSE
-       ===================== */
-
-    private ResponseEntity<Map<String, Object>> problem(
-            HttpStatus status,
-            String title,
-            String detail,
-            WebRequest request,
-            String logMessage,
-            boolean serverError
-    ) {
-        String correlationId = resolveCorrelationId(request);
-        String path = extractPath(request);
-
-        if (serverError) {
-            log.error("{} | correlationId={} | path={}", logMessage, correlationId, path);
-        } else {
-            log.warn("{} | correlationId={} | path={}", logMessage, correlationId, path);
-        }
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create(TYPE_ABOUT_BLANK));
-        body.put("title", title);
-        body.put("status", status.value());
-        body.put("detail", detail);
-        body.put("instance", path);
-        body.put("correlationId", correlationId);
-        body.put("timestamp", Instant.now().toString());
-
-        return ResponseEntity
-                .status(status)
-                .header(CORRELATION_HEADER, correlationId)
-                .body(body);
-    }
+    private final AuditLogger auditLogger;
+    private final ProblemResponseBuilder problemBuilder;
 
     /* =====================
        AUTHORIZATION
        ===================== */
 
-    @ExceptionHandler({
-            AccessDeniedException.class,
-            AuthorizationDeniedException.class
-    })
+    @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
     public ResponseEntity<Map<String, Object>> handleAccessDenied(
             Exception ex,
             WebRequest request
     ) {
-        return problem(
+        auditLogger.logAccessDenied(ex, request);
+
+        return problemBuilder.build(
                 HttpStatus.FORBIDDEN,
                 "Access denied",
-                resolveMessage(ex, "You do not have permission to access this resource."),
+                problemBuilder.resolveMessage(ex, "You do not have permission to access this resource."),
                 request,
                 "Authorization failure: " + ex.getClass().getSimpleName(),
                 false
@@ -96,7 +69,7 @@ public class GlobalExceptionHandler {
     }
 
     /* =====================
-       ACCOUNT / AUTH DOMAIN
+       AUTHENTICATION
        ===================== */
 
     @ExceptionHandler(BadCredentialsException.class)
@@ -104,10 +77,10 @@ public class GlobalExceptionHandler {
             BadCredentialsException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.UNAUTHORIZED,
                 "Invalid credentials",
-                resolveMessage(ex, "The email or password you entered is incorrect."),
+                problemBuilder.resolveMessage(ex, "The email or password you entered is incorrect."),
                 request,
                 "Authentication failure: invalid credentials",
                 false
@@ -119,10 +92,10 @@ public class GlobalExceptionHandler {
             AuthenticatedUserMissingException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.UNAUTHORIZED,
                 "Authentication context invalid",
-                resolveMessage(ex, "Authentication state is no longer valid. Please log in again."),
+                problemBuilder.resolveMessage(ex, "Authentication state is no longer valid. Please log in again."),
                 request,
                 "Authenticated user missing from database",
                 true
@@ -134,10 +107,10 @@ public class GlobalExceptionHandler {
             UserAccountDisabledException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.FORBIDDEN,
                 "Account disabled",
-                resolveMessage(ex, "Your account has been disabled. Please contact support."),
+                problemBuilder.resolveMessage(ex, "Your account has been disabled. Please contact support."),
                 request,
                 "Account disabled",
                 false
@@ -149,10 +122,10 @@ public class GlobalExceptionHandler {
             EmailNotVerifiedException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.FORBIDDEN,
                 "Email not verified",
-                resolveMessage(ex, "Please verify your email address before logging in."),
+                problemBuilder.resolveMessage(ex, "Please verify your email address before logging in."),
                 request,
                 "Authentication failure: email not verified",
                 false
@@ -164,18 +137,70 @@ public class GlobalExceptionHandler {
             LockedException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.FORBIDDEN,
                 "Account locked",
-                resolveMessage(ex, "Your account is locked. Please contact support."),
+                problemBuilder.resolveMessage(ex, "Your account is locked. Please contact support."),
                 request,
                 "Authentication failure: account locked",
                 false
         );
     }
 
+    @ExceptionHandler(InternalAuthenticationServiceException.class)
+    public ResponseEntity<Map<String, Object>> handleInternalAuthenticationServiceException(
+            InternalAuthenticationServiceException ex,
+            WebRequest request
+    ) {
+        Throwable cause = ex.getCause();
+
+        if (cause instanceof DisabledException || cause instanceof UserAccountDisabledException) {
+            return problemBuilder.build(
+                    HttpStatus.FORBIDDEN,
+                    "Account disabled",
+                    problemBuilder.resolveMessage(cause, "Your account has been disabled. Please contact support."),
+                    request,
+                    "Authentication failure: account disabled (wrapped)",
+                    false
+            );
+        }
+
+        if (cause instanceof LockedException) {
+            return problemBuilder.build(
+                    HttpStatus.FORBIDDEN,
+                    "Account locked",
+                    problemBuilder.resolveMessage(cause, "Your account is locked. Please contact support."),
+                    request,
+                    "Authentication failure: account locked (wrapped)",
+                    false
+            );
+        }
+
+        if (cause instanceof BadCredentialsException) {
+            return problemBuilder.build(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid credentials",
+                    problemBuilder.resolveMessage(cause, "The email or password you entered is incorrect."),
+                    request,
+                    "Authentication failure: invalid credentials (wrapped)",
+                    false
+            );
+        }
+
+        log.error("Unhandled InternalAuthenticationServiceException", ex);
+
+        return problemBuilder.build(
+                HttpStatus.UNAUTHORIZED,
+                "Authentication failed",
+                problemBuilder.resolveMessage(ex, "Authentication failed. Please try again."),
+                request,
+                "Authentication failure: internal service exception",
+                true
+        );
+    }
+
     /* =====================
-       REGISTRATION / EMAIL
+       EMAIL VERIFICATION
        ===================== */
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
@@ -183,10 +208,10 @@ public class GlobalExceptionHandler {
             EmailAlreadyExistsException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.CONFLICT,
                 "Email already exists",
-                resolveMessage(ex, "An account with this email already exists."),
+                problemBuilder.resolveMessage(ex, "An account with this email already exists."),
                 request,
                 "Duplicate email registration attempt",
                 false
@@ -198,28 +223,25 @@ public class GlobalExceptionHandler {
             EmailAlreadyVerifiedException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.CONFLICT,
                 "Email already verified",
-                resolveMessage(ex, "This email address is already verified."),
+                problemBuilder.resolveMessage(ex, "This email address is already verified."),
                 request,
                 "Email verification for already-verified account",
                 false
         );
     }
 
-    @ExceptionHandler({
-            VerificationTokenExpiredException.class,
-            VerificationTokenInvalidException.class
-    })
+    @ExceptionHandler({VerificationTokenExpiredException.class, VerificationTokenInvalidException.class})
     public ResponseEntity<Map<String, Object>> handleVerificationTokenFailures(
             RuntimeException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Verification failed",
-                resolveMessage(ex, "Verification token is invalid or expired."),
+                problemBuilder.resolveMessage(ex, "Verification token is invalid or expired."),
                 request,
                 "Email verification failure: " + ex.getClass().getSimpleName(),
                 false
@@ -239,11 +261,9 @@ public class GlobalExceptionHandler {
     ) {
         log.debug(
                 "Silent verification resend | path={} | reason={}",
-                extractPath(request),
+                problemBuilder.extractPath(request),
                 ex.getMessage()
         );
-
-        // Enumeration-safe response
         return ResponseEntity.ok().build();
     }
 
@@ -252,7 +272,7 @@ public class GlobalExceptionHandler {
             EmailDeliveryFailedException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Email delivery failed",
                 "We were unable to send the verification email. Please try again later.",
@@ -262,30 +282,8 @@ public class GlobalExceptionHandler {
         );
     }
 
-
-
     /* =====================
-   USER / ROLE DOMAIN
-   ===================== */
-
-    @ExceptionHandler(InvalidRoleOperationException.class)
-    public ResponseEntity<Map<String, Object>> handleInvalidRoleOperation(
-            InvalidRoleOperationException ex,
-            WebRequest request
-    ) {
-        return problem(
-                HttpStatus.CONFLICT,
-                "Invalid role operation",
-                resolveMessage(ex, "Invalid role operation."),
-                request,
-                "Invalid role operation attempted",
-                false
-        );
-    }
-
-
-    /* =====================
-       PASSWORD / TOKENS
+       PASSWORD & TOKENS
        ===================== */
 
     @ExceptionHandler({
@@ -297,10 +295,10 @@ public class GlobalExceptionHandler {
             RuntimeException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Password operation failed",
-                resolveMessage(ex, "Password operation failed."),
+                problemBuilder.resolveMessage(ex, "Password operation failed."),
                 request,
                 "Password operation failure: " + ex.getClass().getSimpleName(),
                 false
@@ -320,10 +318,10 @@ public class GlobalExceptionHandler {
             RuntimeException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.UNAUTHORIZED,
                 "Invalid refresh token",
-                resolveMessage(ex, "Your session has expired. Please log in again."),
+                problemBuilder.resolveMessage(ex, "Your session has expired. Please log in again."),
                 request,
                 "Refresh token failure: " + ex.getClass().getSimpleName(),
                 false
@@ -331,9 +329,55 @@ public class GlobalExceptionHandler {
     }
 
     /* =====================
-       GENERIC / INFRA
+       USER DOMAIN
        ===================== */
 
+    @ExceptionHandler(InvalidRoleOperationException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidRoleOperation(
+            InvalidRoleOperationException ex,
+            WebRequest request
+    ) {
+        return problemBuilder.build(
+                HttpStatus.CONFLICT,
+                "Invalid role operation",
+                problemBuilder.resolveMessage(ex, "Invalid role operation."),
+                request,
+                "Invalid role operation attempted",
+                false
+        );
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFound(
+            ResourceNotFoundException ex,
+            WebRequest request
+    ) {
+        return problemBuilder.build(
+                HttpStatus.NOT_FOUND,
+                "Resource not found",
+                problemBuilder.resolveMessage(ex, "The requested resource was not found."),
+                request,
+                "Resource not found",
+                false
+        );
+    }
+
+    /* =====================
+       VALIDATION
+       ===================== */
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidation(
+            MethodArgumentNotValidException ex,
+            WebRequest request
+    ) {
+        Map<String, String> errors = new HashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            errors.put(error.getField(), error.getDefaultMessage());
+        }
+
+        return problemBuilder.buildValidationError(errors, request);
+    }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<Map<String, Object>> handleHandlerMethodValidation(
@@ -344,33 +388,29 @@ public class GlobalExceptionHandler {
 
         ex.getParameterValidationResults().forEach(result -> {
             String paramName = result.getMethodParameter().getParameterName();
-
             result.getResolvableErrors().forEach(error -> {
                 errors.put(paramName, error.getDefaultMessage());
             });
         });
 
-        log.warn(
-                "Handler method validation failed | path={} | violations={}",
-                extractPath(request),
-                errors.size()
-        );
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create(TYPE_ABOUT_BLANK));
-        body.put("title", "Validation failed");
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("detail", "Request validation failed");
-        body.put("errors", errors);
-        body.put("instance", extractPath(request));
-        body.put("timestamp", Instant.now().toString());
-
-        return ResponseEntity
-                .badRequest()
-                .header(CORRELATION_HEADER, resolveCorrelationId(request))
-                .body(body);
+        return problemBuilder.buildValidationError(errors, request);
     }
 
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConstraintViolation(
+            jakarta.validation.ConstraintViolationException ex,
+            WebRequest request
+    ) {
+        Map<String, String> errors = new HashMap<>();
+        ex.getConstraintViolations().forEach(v ->
+                errors.put(
+                        v.getPropertyPath() != null ? v.getPropertyPath().toString() : "parameter",
+                        v.getMessage()
+                )
+        );
+
+        return problemBuilder.buildValidationError(errors, request);
+    }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Map<String, Object>> handleMethodArgumentTypeMismatch(
@@ -390,7 +430,7 @@ public class GlobalExceptionHandler {
             detail += " Provided value: '%s'.".formatted(value);
         }
 
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Invalid request parameter",
                 detail,
@@ -400,44 +440,9 @@ public class GlobalExceptionHandler {
         );
     }
 
-
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<Map<String, Object>> handleResourceNotFound(
-            ResourceNotFoundException ex,
-            WebRequest request
-    ) {
-        return problem(
-                HttpStatus.NOT_FOUND,
-                "Resource not found",
-                resolveMessage(ex, "The requested resource was not found."),
-                request,
-                "Resource not found",
-                false
-        );
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidation(
-            MethodArgumentNotValidException ex,
-            WebRequest request
-    ) {
-        Map<String, String> errors = new HashMap<>();
-        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            errors.put(error.getField(), error.getDefaultMessage());
-        }
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create(TYPE_ABOUT_BLANK));
-        body.put("title", "Validation failed");
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("detail", "Request validation failed");
-        body.put("errors", errors);
-        body.put("instance", extractPath(request));
-        body.put("timestamp", Instant.now().toString());
-
-        log.warn("Validation failure | path={} | errors={}", extractPath(request), errors.size());
-        return ResponseEntity.badRequest().body(body);
-    }
+    /* =====================
+       DATA & INFRASTRUCTURE
+       ===================== */
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrity(
@@ -449,7 +454,7 @@ public class GlobalExceptionHandler {
                 cve.getConstraintName() != null &&
                 cve.getConstraintName().toLowerCase().contains("email")) {
 
-            return problem(
+            return problemBuilder.build(
                     HttpStatus.CONFLICT,
                     "Email already exists",
                     "An account with this email address already exists.",
@@ -459,10 +464,10 @@ public class GlobalExceptionHandler {
             );
         }
 
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Invalid request",
-                resolveMessage(ex, "Request violates data constraints."),
+                problemBuilder.resolveMessage(ex, "Request violates data constraints."),
                 request,
                 "Data integrity violation",
                 true
@@ -474,10 +479,10 @@ public class GlobalExceptionHandler {
             RateLimitExceededException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.TOO_MANY_REQUESTS,
                 "Too many requests",
-                resolveMessage(ex, "Too many requests. Please try again later."),
+                problemBuilder.resolveMessage(ex, "Too many requests. Please try again later."),
                 request,
                 "Rate limit exceeded",
                 false
@@ -489,10 +494,10 @@ public class GlobalExceptionHandler {
             NoResourceFoundException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.NOT_FOUND,
                 "Resource not found",
-                resolveMessage(ex, "The requested resource was not found."),
+                problemBuilder.resolveMessage(ex, "The requested resource was not found."),
                 request,
                 "404 Not Found",
                 false
@@ -506,9 +511,8 @@ public class GlobalExceptionHandler {
     ) {
         String message = ex.getMessage();
 
-        // ✅ Explicit handling for missing request body
         if (message != null && message.contains("Required request body is missing")) {
-            return problem(
+            return problemBuilder.build(
                     HttpStatus.BAD_REQUEST,
                     "Invalid request body",
                     "Required request body is missing",
@@ -518,8 +522,7 @@ public class GlobalExceptionHandler {
             );
         }
 
-        // Fallback → malformed JSON, invalid types, etc.
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Invalid request body",
                 "Malformed JSON or invalid field types.",
@@ -529,16 +532,15 @@ public class GlobalExceptionHandler {
         );
     }
 
-
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<Map<String, Object>> handleMissingRequestParam(
             MissingServletRequestParameterException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Missing request parameter",
-                resolveMessage(
+                problemBuilder.resolveMessage(
                         ex,
                         "Required request parameter '%s' is missing."
                                 .formatted(ex.getParameterName())
@@ -549,67 +551,15 @@ public class GlobalExceptionHandler {
         );
     }
 
-    @ExceptionHandler(InternalAuthenticationServiceException.class)
-    public ResponseEntity<Map<String, Object>> handleInternalAuthenticationServiceException(
-            InternalAuthenticationServiceException ex,
-            WebRequest request
-    ) {
-        Throwable cause = ex.getCause();
-
-        if (cause instanceof DisabledException || cause instanceof UserAccountDisabledException) {
-            return problem(
-                    HttpStatus.FORBIDDEN,
-                    "Account disabled",
-                    resolveMessage(cause, "Your account has been disabled. Please contact support."),
-                    request,
-                    "Authentication failure: account disabled (wrapped)",
-                    false
-            );
-        }
-
-        if (cause instanceof LockedException) {
-            return problem(
-                    HttpStatus.FORBIDDEN,
-                    "Account locked",
-                    resolveMessage(cause, "Your account is locked. Please contact support."),
-                    request,
-                    "Authentication failure: account locked (wrapped)",
-                    false
-            );
-        }
-
-        if (cause instanceof BadCredentialsException) {
-            return problem(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid credentials",
-                    resolveMessage(cause, "The email or password you entered is incorrect."),
-                    request,
-                    "Authentication failure: invalid credentials (wrapped)",
-                    false
-            );
-        }
-
-        log.error("Unhandled InternalAuthenticationServiceException", ex);
-
-        return problem(
-                HttpStatus.UNAUTHORIZED,
-                "Authentication failed",
-                resolveMessage(ex, "Authentication failed. Please try again."),
-                request,
-                "Authentication failure: internal service exception",
-                true
-        );
-    }
-
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(
             IllegalArgumentException ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.BAD_REQUEST,
                 "Invalid request",
-                resolveMessage(ex, "Invalid request."),
+                problemBuilder.resolveMessage(ex, "Invalid request."),
                 request,
                 "Client error: illegal argument",
                 false
@@ -627,8 +577,8 @@ public class GlobalExceptionHandler {
                 ? "N/A"
                 : String.join(", ", supported.stream().map(HttpMethod::name).toList());
 
-        String correlationId = resolveCorrelationId(request);
-        String path = extractPath(request);
+        String correlationId = problemBuilder.resolveCorrelationId(request);
+        String path = problemBuilder.extractPath(request);
 
         log.warn(
                 "Method not supported | {} → {} | path={} | correlationId={}",
@@ -658,43 +608,12 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(problem, headers, HttpStatus.METHOD_NOT_ALLOWED);
     }
 
-    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
-    public ResponseEntity<Map<String, Object>> handleConstraintViolation(
-            jakarta.validation.ConstraintViolationException ex,
-            WebRequest request
-    ) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getConstraintViolations().forEach(v ->
-                errors.put(
-                        v.getPropertyPath() != null ? v.getPropertyPath().toString() : "parameter",
-                        v.getMessage()
-                )
-        );
-
-        log.warn("Constraint violation | path={} | violations={}",
-                extractPath(request), errors.size());
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create(TYPE_ABOUT_BLANK));
-        body.put("title", "Validation failed");
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("detail", "Request validation failed");
-        body.put("errors", errors);
-        body.put("instance", extractPath(request));
-        body.put("timestamp", Instant.now().toString());
-
-        return ResponseEntity
-                .badRequest()
-                .header(CORRELATION_HEADER, resolveCorrelationId(request))
-                .body(body);
-    }
-
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(
             Exception ex,
             WebRequest request
     ) {
-        return problem(
+        return problemBuilder.build(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Internal server error",
                 "An unexpected error occurred. Please contact support if the problem persists.",
@@ -702,32 +621,5 @@ public class GlobalExceptionHandler {
                 "Unhandled exception: " + ex.getClass().getSimpleName(),
                 true
         );
-    }
-
-    /* =====================
-       HELPERS
-       ===================== */
-
-    private String resolveMessage(Throwable ex, String defaultMessage) {
-        return (ex != null && ex.getMessage() != null && !ex.getMessage().isBlank())
-                ? ex.getMessage()
-                : defaultMessage;
-    }
-
-    private String extractPath(WebRequest request) {
-        if (request instanceof ServletWebRequest servletRequest) {
-            return servletRequest.getRequest().getRequestURI();
-        }
-        return "N/A";
-    }
-
-    private String resolveCorrelationId(WebRequest request) {
-        if (request instanceof ServletWebRequest swr) {
-            String existing = swr.getRequest().getHeader(CORRELATION_HEADER);
-            if (existing != null && !existing.isBlank()) {
-                return existing;
-            }
-        }
-        return UUID.randomUUID().toString();
     }
 }

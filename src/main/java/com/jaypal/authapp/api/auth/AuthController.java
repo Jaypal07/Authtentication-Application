@@ -4,10 +4,7 @@ import com.jaypal.authapp.common.annotation.AuthAudit;
 import com.jaypal.authapp.config.properties.RateLimitProperties;
 import com.jaypal.authapp.domain.audit.entity.AuthAuditEvent;
 import com.jaypal.authapp.domain.audit.entity.AuditSubjectType;
-import com.jaypal.authapp.dto.auth.AuthLoginResult;
-import com.jaypal.authapp.dto.auth.LoginRequest;
-import com.jaypal.authapp.dto.auth.RefreshTokenRequest;
-import com.jaypal.authapp.dto.auth.TokenResponse;
+import com.jaypal.authapp.dto.auth.*;
 import com.jaypal.authapp.infrastructure.ratelimit.RateLimitContext;
 import com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException;
 import com.jaypal.authapp.infrastructure.ratelimit.RedisRateLimiter;
@@ -186,10 +183,10 @@ public class AuthController {
     )
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> initiatePasswordReset(
-            @RequestParam @NotBlank String email
-    ) {
+            @Valid @RequestBody PasswordResetRequest request
+            ) {
         log.debug("Password reset initiation requested");
-        authService.initiatePasswordReset(email);
+        authService.initiatePasswordReset(request.email());
 
         // Always succeed to prevent user enumeration
         return ResponseEntity.ok(Map.of(

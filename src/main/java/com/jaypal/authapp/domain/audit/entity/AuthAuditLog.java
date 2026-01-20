@@ -39,6 +39,9 @@ public class AuthAuditLog {
     @Enumerated(EnumType.STRING)
     private AuditSeverity severity;
 
+    @Column(name = "details", length = 1024)
+    private String details;
+
     /* ================= ACTOR ================= */
 
     @Enumerated(EnumType.STRING)
@@ -80,7 +83,8 @@ public class AuthAuditLog {
             AuditSubject subject,
             AuthFailureReason failureReason,
             AuthProvider provider,
-            AuditRequestContext context
+            AuditRequestContext context,
+            String details
     ) {
         this.category = category;
         this.event = event;
@@ -98,6 +102,7 @@ public class AuthAuditLog {
         this.ipAddress = context != null ? context.ipAddress() : null;
         this.userAgent = context != null ? context.userAgent() : null;
         this.createdAt = Instant.now();
+        this.details = details;
     }
 
     public UUID getId() {

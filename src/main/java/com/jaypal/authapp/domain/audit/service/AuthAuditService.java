@@ -22,6 +22,34 @@ public class AuthAuditService {
        PUBLIC API
        ============================================================ */
 
+    @Async("auditExecutor")
+    public void record(
+            AuditCategory category,
+            AuthAuditEvent event,
+            AuditOutcome outcome,
+            AuditActor actor,
+            AuditSubject subject,
+            AuthFailureReason failureReason,
+            AuthProvider provider,
+            AuditRequestContext context,
+            String details
+    ) {
+        AuthAuditLog log = new AuthAuditLog(
+                category,
+                event,
+                outcome,
+                failureReason != null ? failureReason.getSeverity() : AuditSeverity.LOW,
+                actor,
+                subject,
+                failureReason,
+                provider,
+                context,
+                details
+        );
+
+        repository.save(log);
+    }
+
     /**
      * Records an audit log asynchronously. Supports SUCCESS, FAILURE, and NO_OP outcomes.
      */
@@ -68,7 +96,8 @@ public class AuthAuditService {
                     subject,
                     failureReason,
                     provider,
-                    context
+                    context,
+                    null
             );
 
 
@@ -91,6 +120,7 @@ public class AuthAuditService {
                         );
                     }
                 }
+                default -> throw new IllegalStateException("Unexpected value: " + outcome);
             }
 
         } catch (Exception ex) {

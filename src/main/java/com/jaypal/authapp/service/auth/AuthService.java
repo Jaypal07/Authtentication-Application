@@ -209,13 +209,14 @@ public class AuthService {
     public void initiatePasswordReset(String email) {
         userRepository.findByEmail(email).ifPresentOrElse(user -> {
 
-            if (!user.isEnabled()) {
-                log.warn("Password reset blocked for disabled user. userId={}", user.getId());
-                return;
-            }
-
-            if (!user.isEmailVerified()) {
-                log.warn("Password reset blocked for unverified email. userId={}", user.getId());
+            if (!user.isEnabled() || !user.isEmailVerified()) {
+                log.warn(
+                        "Password reset blocked. userId={}, enabled={}, emailVerified={}",
+                        user.getId(),
+                        user.isEnabled(),
+                        user.isEmailVerified()
+                );
+                AuditContextHolder.markNoOp();
                 return;
             }
 
@@ -241,10 +242,12 @@ public class AuthService {
                 log.error("Password reset email failed. userId={}", user.getId(), ex);
             }
 
-        }, () -> log.debug("Password reset requested for non-existent email"));
-
-        // silent exit to prevent enumeration
+        }, () -> {
+            AuditContextHolder.markNoOp();
+            log.debug("Password reset requested for non-existent email");
+        });
     }
+
 
     @Transactional
     public void resetPassword(String tokenValue, String rawPassword) {

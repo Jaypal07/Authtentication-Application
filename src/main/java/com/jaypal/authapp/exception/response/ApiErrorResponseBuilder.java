@@ -17,13 +17,13 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ProblemResponseBuilder {
+public class ApiErrorResponseBuilder {
 
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
 
     private final CorrelationIdResolver correlationIdResolver;
     private final RequestPathExtractor requestPathExtractor;
-    private final ProblemDetailFactory problemDetailFactory;
+    private final ErrorDetailFactory problemDetailFactory;
     private final ValidationErrorFactory validationErrorFactory;
 
     /**

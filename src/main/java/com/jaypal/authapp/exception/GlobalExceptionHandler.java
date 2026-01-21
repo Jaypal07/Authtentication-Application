@@ -2,7 +2,7 @@ package com.jaypal.authapp.exception;
 
 import com.jaypal.authapp.exception.audit.AuditLogger;
 import com.jaypal.authapp.exception.handler.*;
-import com.jaypal.authapp.exception.response.ProblemResponseBuilder;
+import com.jaypal.authapp.exception.response.ApiErrorResponseBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +28,7 @@ import java.util.Map;
 public class GlobalExceptionHandler {
 
     private final AuditLogger auditLogger;
-    private final ProblemResponseBuilder problemBuilder;
+    private final ApiErrorResponseBuilder problemBuilder;
 
     // Specialized handlers
     private final AuthorizationExceptionHandler authorizationHandler;

@@ -1,6 +1,6 @@
 package com.jaypal.authapp.exception.handler;
 
-import com.jaypal.authapp.exception.response.ProblemResponseBuilder;
+import com.jaypal.authapp.exception.response.ApiErrorResponseBuilder;
 import com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +26,7 @@ public class InfrastructureExceptionHandler {
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
     private static final String TYPE_ABOUT_BLANK = "about:blank";
 
-    private final ProblemResponseBuilder problemBuilder;
+    private final ApiErrorResponseBuilder problemBuilder;
 
     public ResponseEntity<Map<String, Object>> handleDataIntegrity(
             DataIntegrityViolationException ex,

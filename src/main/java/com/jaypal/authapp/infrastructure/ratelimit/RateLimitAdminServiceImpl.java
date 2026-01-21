@@ -10,40 +10,35 @@ import org.springframework.stereotype.Service;
 
 import java.util.Set;
 
+/**
+ * Refactored RateLimitAdminService with improved structure.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RateLimitAdminServiceImpl implements RateLimitAdminService {
 
     private final StringRedisTemplate redisTemplate;
-    private final MeterRegistry meterRegistry;
+    private final RateLimitMetricsRecorder metricsRecorder;
 
     @Override
     @PreAuthorize("hasAuthority('RATE_LIMIT_RESET')")
     public void resetLoginIp(String ip) {
         String key = "rl:login:ip:" + ip;
-        redisTemplate.delete(key);
+        deleteKey(key);
 
-        Counter.builder("auth.ratelimit.reset")
-                .tag("type", "login_ip")
-                .register(meterRegistry)
-                .increment();
-
+        metricsRecorder.recordReset("login_ip");
         log.warn("Admin reset login IP rate limit | ip={}", ip);
     }
 
     @Override
     @PreAuthorize("hasAuthority('RATE_LIMIT_RESET')")
     public void resetLoginEmail(String email) {
-        String normalized = email.toLowerCase().trim();
+        String normalized = normalizeEmail(email);
         String key = "rl:login:email:" + normalized;
-        redisTemplate.delete(key);
+        deleteKey(key);
 
-        Counter.builder("auth.ratelimit.reset")
-                .tag("type", "login_email")
-                .register(meterRegistry)
-                .increment();
-
+        metricsRecorder.recordReset("login_email");
         log.warn("Admin reset login email rate limit | email={}", normalized);
     }
 
@@ -51,16 +46,25 @@ public class RateLimitAdminServiceImpl implements RateLimitAdminService {
     @PreAuthorize("hasAuthority('RATE_LIMIT_RESET')")
     public void resetAllIpLimits(String ip) {
         Set<String> keys = redisTemplate.keys("rl:ip:" + ip + ":*");
+        int keysDeleted = deleteKeys(keys);
 
-        if (!keys.isEmpty()) {
+        metricsRecorder.recordReset("all_ip");
+        log.warn("Admin reset ALL rate limits for IP | ip={} keys={}", ip, keysDeleted);
+    }
+
+    private void deleteKey(String key) {
+        redisTemplate.delete(key);
+    }
+
+    private int deleteKeys(Set<String> keys) {
+        if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
+            return keys.size();
         }
+        return 0;
+    }
 
-        Counter.builder("auth.ratelimit.reset")
-                .tag("type", "all_ip")
-                .register(meterRegistry)
-                .increment();
-
-        log.warn("Admin reset ALL rate limits for IP | ip={} keys={}", ip, keys.size());
+    private String normalizeEmail(String email) {
+        return email.toLowerCase().trim();
     }
 }

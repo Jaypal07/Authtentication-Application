@@ -3,7 +3,7 @@ package com.jaypal.authapp.exception.handler;
 import com.jaypal.authapp.domain.user.exception.UserAccountDisabledException;
 import com.jaypal.authapp.exception.auth.AuthenticatedUserMissingException;
 import com.jaypal.authapp.exception.auth.EmailNotVerifiedException;
-import com.jaypal.authapp.exception.response.ProblemResponseBuilder;
+import com.jaypal.authapp.exception.response.ApiErrorResponseBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -22,7 +22,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthenticationExceptionHandler {
 
-    private final ProblemResponseBuilder problemBuilder;
+    private final ApiErrorResponseBuilder problemBuilder;
 
     public ResponseEntity<Map<String, Object>> handleBadCredentials(
             BadCredentialsException ex,

@@ -13,7 +13,7 @@ import java.util.Map;
  * Follows Single Responsibility Principle.
  */
 @Component
-public class ProblemDetailFactory {
+public class ErrorDetailFactory {
 
     private static final String TYPE_ABOUT_BLANK = "about:blank";
 

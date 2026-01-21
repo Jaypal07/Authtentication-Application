@@ -4,7 +4,7 @@ import com.jaypal.authapp.domain.user.exception.EmailAlreadyExistsException;
 import com.jaypal.authapp.exception.auth.EmailAlreadyVerifiedException;
 import com.jaypal.authapp.exception.auth.EmailDeliveryFailedException;
 import com.jaypal.authapp.exception.auth.SilentEmailVerificationResendException;
-import com.jaypal.authapp.exception.response.ProblemResponseBuilder;
+import com.jaypal.authapp.exception.response.ApiErrorResponseBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -19,7 +19,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class EmailVerificationExceptionHandler {
 
-    private final ProblemResponseBuilder problemBuilder;
+    private final ApiErrorResponseBuilder problemBuilder;
 
     public ResponseEntity<Map<String, Object>> handleEmailAlreadyExists(
             EmailAlreadyExistsException ex,

@@ -9,65 +9,69 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Refactored IdentityResolver with improved null safety and readability.
+ * Uses Optional for cleaner null handling.
+ */
 @Slf4j
 @Component
 public class IdentityResolver {
 
+    private static final String ANONYMOUS_USER = "anonymousUser";
+
     public UUID fromSecurityContext() {
-        try {
-            final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-
-            if (auth == null || !auth.isAuthenticated()) {
-                return null;
-            }
-
-            if ("anonymousUser".equals(auth.getPrincipal())) {
-                return null;
-            }
-
-            if (auth.getPrincipal() instanceof AuthPrincipal principal) {
-                return principal.getUserId();
-            }
-
-            return null;
-
-        } catch (Exception ex) {
-            log.debug("Failed to extract user ID from security context", ex);
-            return null;
-        }
+        return extractFromAuthentication()
+                .orElse(null);
     }
 
     public UUID fromResult(Object result) {
+        return extractFromResult(result)
+                .orElse(null);
+    }
+
+    private Optional<UUID> extractFromAuthentication() {
+        try {
+            return Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                    .filter(Authentication::isAuthenticated)
+                    .map(Authentication::getPrincipal)
+                    .filter(principal -> !ANONYMOUS_USER.equals(principal))
+                    .filter(AuthPrincipal.class::isInstance)
+                    .map(AuthPrincipal.class::cast)
+                    .map(AuthPrincipal::getUserId);
+
+        } catch (Exception ex) {
+            log.debug("Failed to extract user ID from security context", ex);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<UUID> extractFromResult(Object result) {
         try {
             if (result instanceof ResponseEntity<?> responseEntity) {
-                final Object body = responseEntity.getBody();
-
-                if (body instanceof TokenResponse tokenResponse) {
-                    return tokenResponse.user().id();
-                }
+                return extractFromResponseEntity(responseEntity);
             }
 
             if (result instanceof AuthLoginResult authLoginResult) {
-                return authLoginResult.user().id();
+                return Optional.ofNullable(authLoginResult.user())
+                        .map(user -> user.id());
             }
 
-            return null;
+            return Optional.empty();
 
         } catch (Exception ex) {
             log.debug("Failed to extract user ID from result", ex);
-            return null;
+            return Optional.empty();
         }
     }
-}
 
-/*
-CHANGELOG:
-1. Added null checks and try-catch to prevent NPE
-2. Added check for "anonymousUser" string (Spring Security default)
-3. Added logging for debugging
-4. Made all methods safe - return null instead of throwing
-5. Added explicit type checks before casting
-6. Improved code readability with final variables
-*/
+    private Optional<UUID> extractFromResponseEntity(ResponseEntity<?> responseEntity) {
+        return Optional.ofNullable(responseEntity.getBody())
+                .filter(TokenResponse.class::isInstance)
+                .map(TokenResponse.class::cast)
+                .map(TokenResponse::user)
+                .map(user -> user.id());
+    }
+}

@@ -3,144 +3,110 @@ package com.jaypal.authapp.infrastructure.audit.resolver;
 import com.jaypal.authapp.common.annotation.AuthAudit;
 import com.jaypal.authapp.domain.audit.entity.AuditSubject;
 import com.jaypal.authapp.domain.audit.entity.AuditSubjectType;
-import com.jaypal.authapp.domain.audit.entity.HasEmail;
 import com.jaypal.authapp.infrastructure.audit.context.AuditContextHolder;
-import com.jaypal.authapp.infrastructure.principal.AuthPrincipal;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Objects;
 
+/**
+ * Refactored SubjectResolver following SOLID principles:
+ * - Single Responsibility: Orchestrates subject resolution
+ * - Open/Closed: Extensible via strategy pattern
+ * - Dependency Inversion: Depends on SubjectResolutionStrategy abstraction
+ */
 @Slf4j
 @Component
 public class SubjectResolver {
 
-    public AuditSubject resolve(
-            AuthAudit annotation,
-            Object[] args,
-            String[] paramNames
-    ) {
+    private final List<SubjectResolutionStrategy> strategies;
+
+    public SubjectResolver(List<SubjectResolutionStrategy> strategies) {
+        this.strategies = Objects.requireNonNull(strategies, "strategies must not be null");
+    }
+
+    public AuditSubject resolve(AuthAudit annotation, Object[] args, String[] paramNames) {
         try {
-            Objects.requireNonNull(annotation, "annotation must not be null");
-            Objects.requireNonNull(args, "args must not be null");
-            Objects.requireNonNull(paramNames, "paramNames must not be null");
+            validateInputs(annotation, args, paramNames);
 
             AuditSubjectType type = annotation.subject();
 
-            // Explicit subject types
-            if (type == AuditSubjectType.ANONYMOUS) {
-                return AuditSubject.anonymous();
+            // Handle static subject types
+            if (isStaticSubjectType(type)) {
+                return resolveStaticSubject(type);
             }
 
-            if (type == AuditSubjectType.SYSTEM) {
-                return AuditSubject.system();
-            }
-
-            // Param-based subject types
-            // USER_ID can be resolved from AuditRequestContext
-            if (annotation.subjectParam().isBlank()) {
-                if (type == AuditSubjectType.USER_ID) {
-                    return resolveUserIdFromContext();
-                }
-
-                log.warn("Audit subjectParam is blank for subject type {}", type);
-                return AuditSubject.anonymous();
-            }
-
-
-            for (int i = 0; i < paramNames.length; i++) {
-                if (annotation.subjectParam().equals(paramNames[i])) {
-                    Object value = args[i];
-
-                    if (value == null) {
-                        if (type == AuditSubjectType.USER_ID) {
-                            return resolveUserIdFromContext();
-                        }
-
-                        log.warn("Audit subject parameter '{}' is null", paramNames[i]);
-                        return AuditSubject.anonymous();
-                    }
-
-
-                    return extractSubject(type, value);
-                }
-            }
-
-            log.warn("Audit subject parameter '{}' not found", annotation.subjectParam());
-            return AuditSubject.anonymous();
+            // Handle parameter-based resolution
+            return resolveFromParameter(annotation, args, paramNames, type);
 
         } catch (Exception ex) {
-            // Absolute safety net — audit must never fail the request
             log.warn("Audit subject resolution failed, defaulting to ANONYMOUS", ex);
             return AuditSubject.anonymous();
         }
     }
 
-    private AuditSubject extractSubject(AuditSubjectType type, Object value) {
+    private void validateInputs(AuthAudit annotation, Object[] args, String[] paramNames) {
+        Objects.requireNonNull(annotation, "annotation must not be null");
+        Objects.requireNonNull(args, "args must not be null");
+        Objects.requireNonNull(paramNames, "paramNames must not be null");
+    }
+
+    private boolean isStaticSubjectType(AuditSubjectType type) {
+        return type == AuditSubjectType.ANONYMOUS || type == AuditSubjectType.SYSTEM;
+    }
+
+    private AuditSubject resolveStaticSubject(AuditSubjectType type) {
         return switch (type) {
-            case EMAIL, IP -> extractEmail(value);
-            case USER_ID -> extractUserId(value);
-            case ANONYMOUS, SYSTEM -> {
-                log.warn("Subject type {} should not require extraction", type);
-                yield AuditSubject.anonymous();
-            }
+            case ANONYMOUS -> AuditSubject.anonymous();
+            case SYSTEM -> AuditSubject.system();
+            default -> throw new IllegalStateException("Unexpected static type: " + type);
         };
     }
 
-    private AuditSubject extractEmail(Object value) {
-        try {
-            String email = null;
-
-            if (value instanceof String str) {
-                email = str;
-            } else if (value instanceof HasEmail hasEmail) {
-                email = hasEmail.getEmail();
-            } else if (value instanceof AuthPrincipal principal) {
-                email = principal.getEmail();
-            } else {
-                log.warn("Cannot extract email from type: {}", value.getClass().getName());
-                return AuditSubject.anonymous();
+    private AuditSubject resolveFromParameter(
+            AuthAudit annotation,
+            Object[] args,
+            String[] paramNames,
+            AuditSubjectType type
+    ) {
+        // Special handling for USER_ID from context
+        if (annotation.subjectParam().isBlank()) {
+            if (type == AuditSubjectType.USER_ID) {
+                return resolveUserIdFromContext();
             }
-
-            if (email == null || email.isBlank()) {
-                log.warn("Extracted email is blank");
-                return AuditSubject.anonymous();
-            }
-
-            return AuditSubject.email(email);
-
-        } catch (Exception ex) {
-            log.warn("Email extraction failed, defaulting to ANONYMOUS", ex);
+            log.warn("Audit subjectParam is blank for subject type {}", type);
             return AuditSubject.anonymous();
         }
+
+        // Find and resolve from parameter
+        for (int i = 0; i < paramNames.length; i++) {
+            if (annotation.subjectParam().equals(paramNames[i])) {
+                return resolveFromValue(type, args[i], paramNames[i]);
+            }
+        }
+
+        log.warn("Audit subject parameter '{}' not found", annotation.subjectParam());
+        return AuditSubject.anonymous();
     }
 
-    private AuditSubject extractUserId(Object value) {
-        try {
-            String userId = null;
-
-            if (value instanceof String str) {
-                userId = str;
-            } else if (value instanceof AuthPrincipal principal) {
-                if (principal.getUserId() != null) {
-                    userId = principal.getUserId().toString();
-                }
-            } else {
-                log.warn("Cannot extract user ID from type: {}", value.getClass().getName());
-                return AuditSubject.anonymous();
+    private AuditSubject resolveFromValue(AuditSubjectType type, Object value, String paramName) {
+        if (value == null) {
+            if (type == AuditSubjectType.USER_ID) {
+                return resolveUserIdFromContext();
             }
-
-            if (userId == null || userId.isBlank()) {
-                log.warn("Extracted user ID is blank");
-                return AuditSubject.anonymous();
-            }
-
-            return AuditSubject.userId(userId);
-
-        } catch (Exception ex) {
-            log.warn("User ID extraction failed, defaulting to ANONYMOUS", ex);
+            log.warn("Audit subject parameter '{}' is null", paramName);
             return AuditSubject.anonymous();
         }
+
+        return strategies.stream()
+                .filter(strategy -> strategy.supports(type, value))
+                .findFirst()
+                .map(strategy -> strategy.resolve(value))
+                .orElseGet(() -> {
+                    log.warn("No strategy found for type {} and value {}", type, value.getClass().getName());
+                    return AuditSubject.anonymous();
+                });
     }
 
     private AuditSubject resolveUserIdFromContext() {
@@ -159,5 +125,4 @@ public class SubjectResolver {
             return AuditSubject.anonymous();
         }
     }
-
 }

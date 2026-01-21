@@ -1,22 +1,18 @@
 package com.jaypal.authapp.exception.response;
 
+import com.jaypal.authapp.exception.audit.RequestPathExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
-import java.net.URI;
-import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
- * Builder for RFC 7807 Problem Details responses.
- * Provides consistent error response structure across the application.
+ * Refactored ProblemResponseBuilder with improved separation of concerns.
+ * Delegates specific responsibilities to focused components.
  */
 @Slf4j
 @Component
@@ -24,7 +20,11 @@ import java.util.UUID;
 public class ProblemResponseBuilder {
 
     private static final String CORRELATION_HEADER = "X-Correlation-Id";
-    private static final String TYPE_ABOUT_BLANK = "about:blank";
+
+    private final CorrelationIdResolver correlationIdResolver;
+    private final RequestPathExtractor requestPathExtractor;
+    private final ProblemDetailFactory problemDetailFactory;
+    private final ValidationErrorFactory validationErrorFactory;
 
     /**
      * Creates a standard problem response with correlation tracking.
@@ -37,12 +37,14 @@ public class ProblemResponseBuilder {
             String logMessage,
             boolean serverError
     ) {
-        String correlationId = resolveCorrelationId(request);
-        String path = extractPath(request);
+        String correlationId = correlationIdResolver.resolve(request);
+        String path = requestPathExtractor.extract(request);
 
         logError(serverError, logMessage, correlationId, path);
 
-        Map<String, Object> body = buildResponseBody(status, title, detail, path, correlationId);
+        Map<String, Object> body = problemDetailFactory.create(
+                status, title, detail, path, correlationId
+        );
 
         return ResponseEntity
                 .status(status)
@@ -57,20 +59,14 @@ public class ProblemResponseBuilder {
             Map<String, String> fieldErrors,
             WebRequest request
     ) {
-        String correlationId = resolveCorrelationId(request);
-        String path = extractPath(request);
+        String correlationId = correlationIdResolver.resolve(request);
+        String path = requestPathExtractor.extract(request);
 
         log.warn("Validation failure | path={} | errors={}", path, fieldErrors.size());
 
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create(TYPE_ABOUT_BLANK));
-        body.put("title", "Validation failed");
-        body.put("status", HttpStatus.BAD_REQUEST.value());
-        body.put("detail", "Request validation failed");
-        body.put("errors", fieldErrors);
-        body.put("instance", path);
-        body.put("correlationId", correlationId);
-        body.put("timestamp", Instant.now().toString());
+        Map<String, Object> body = validationErrorFactory.create(
+                fieldErrors, path, correlationId
+        );
 
         return ResponseEntity
                 .badRequest()
@@ -91,44 +87,14 @@ public class ProblemResponseBuilder {
      * Extracts the request path from the web request.
      */
     public String extractPath(WebRequest request) {
-        if (request instanceof ServletWebRequest servletRequest) {
-            return servletRequest.getRequest().getRequestURI();
-        }
-        return "N/A";
+        return requestPathExtractor.extract(request);
     }
 
     /**
      * Resolves or generates a correlation ID for request tracking.
      */
     public String resolveCorrelationId(WebRequest request) {
-        if (request instanceof ServletWebRequest swr) {
-            String existing = swr.getRequest().getHeader(CORRELATION_HEADER);
-            if (existing != null && !existing.isBlank()) {
-                return existing;
-            }
-        }
-        return UUID.randomUUID().toString();
-    }
-
-    /**
-     * Builds the response body map following RFC 7807 structure.
-     */
-    private Map<String, Object> buildResponseBody(
-            HttpStatus status,
-            String title,
-            String detail,
-            String path,
-            String correlationId
-    ) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("type", URI.create(TYPE_ABOUT_BLANK));
-        body.put("title", title);
-        body.put("status", status.value());
-        body.put("detail", detail);
-        body.put("instance", path);
-        body.put("correlationId", correlationId);
-        body.put("timestamp", Instant.now().toString());
-        return body;
+        return correlationIdResolver.resolve(request);
     }
 
     /**

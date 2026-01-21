@@ -1,285 +1,161 @@
 package com.jaypal.authapp.exception;
 
-import com.jaypal.authapp.domain.token.exception.*;
-import com.jaypal.authapp.domain.user.exception.EmailAlreadyExistsException;
-import com.jaypal.authapp.domain.user.exception.InvalidRoleOperationException;
-import com.jaypal.authapp.domain.user.exception.ResourceNotFoundException;
-import com.jaypal.authapp.domain.user.exception.UserAccountDisabledException;
 import com.jaypal.authapp.exception.audit.AuditLogger;
-import com.jaypal.authapp.exception.auth.*;
+import com.jaypal.authapp.exception.handler.*;
 import com.jaypal.authapp.exception.response.ProblemResponseBuilder;
-import com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.*;
-import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.*;
-import org.springframework.security.authorization.AuthorizationDeniedException;
-import org.springframework.validation.FieldError;
-import org.springframework.web.HttpRequestMethodNotSupportedException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
-import org.springframework.web.method.annotation.HandlerMethodValidationException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import java.net.URI;
-import java.time.Instant;
-import java.util.*;
+import java.util.Map;
 
 /**
- * Global exception handler for the authentication application.
- * Provides centralized error handling with audit logging and RFC 7807 Problem Details responses.
+ * Refactored GlobalExceptionHandler following SOLID principles.
+ * Delegates exception handling to specialized handler components.
+ *
+ * Benefits:
+ * - Single Responsibility: Each handler focuses on one exception category
+ * - Open/Closed: Easy to add new exception handlers without modifying this class
+ * - Testability: Individual handlers can be unit tested in isolation
+ * - Maintainability: Clear separation of concerns
  */
 @Slf4j
 @RestControllerAdvice
 @RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
-    private static final String CORRELATION_HEADER = "X-Correlation-Id";
-    private static final String TYPE_ABOUT_BLANK = "about:blank";
-
     private final AuditLogger auditLogger;
     private final ProblemResponseBuilder problemBuilder;
+
+    // Specialized handlers
+    private final AuthorizationExceptionHandler authorizationHandler;
+    private final AuthenticationExceptionHandler authenticationHandler;
+    private final EmailVerificationExceptionHandler emailVerificationHandler;
+    private final PasswordTokenExceptionHandler passwordTokenHandler;
+    private final UserDomainExceptionHandler userDomainHandler;
+    private final ValidationExceptionHandler validationHandler;
+    private final InfrastructureExceptionHandler infrastructureHandler;
 
     /* =====================
        AUTHORIZATION
        ===================== */
 
-    @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
+    @ExceptionHandler({
+            org.springframework.security.access.AccessDeniedException.class,
+            org.springframework.security.authorization.AuthorizationDeniedException.class
+    })
     public ResponseEntity<Map<String, Object>> handleAccessDenied(
             Exception ex,
             WebRequest request
     ) {
-        auditLogger.logAccessDenied(ex, request);
-
-        return problemBuilder.build(
-                HttpStatus.FORBIDDEN,
-                "Access denied",
-                problemBuilder.resolveMessage(ex, "You do not have permission to access this resource."),
-                request,
-                "Authorization failure: " + ex.getClass().getSimpleName(),
-                false
-        );
+        return authorizationHandler.handleAccessDenied(ex, request, auditLogger);
     }
 
     /* =====================
        AUTHENTICATION
        ===================== */
 
-    @ExceptionHandler(BadCredentialsException.class)
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
     public ResponseEntity<Map<String, Object>> handleBadCredentials(
-            BadCredentialsException ex,
+            org.springframework.security.authentication.BadCredentialsException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.UNAUTHORIZED,
-                "Invalid credentials",
-                problemBuilder.resolveMessage(ex, "The email or password you entered is incorrect."),
-                request,
-                "Authentication failure: invalid credentials",
-                false
-        );
+        return authenticationHandler.handleBadCredentials(ex, request);
     }
 
-    @ExceptionHandler(AuthenticatedUserMissingException.class)
+    @ExceptionHandler(com.jaypal.authapp.exception.auth.AuthenticatedUserMissingException.class)
     public ResponseEntity<Map<String, Object>> handleAuthenticatedUserMissing(
-            AuthenticatedUserMissingException ex,
+            com.jaypal.authapp.exception.auth.AuthenticatedUserMissingException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.UNAUTHORIZED,
-                "Authentication context invalid",
-                problemBuilder.resolveMessage(ex, "Authentication state is no longer valid. Please log in again."),
-                request,
-                "Authenticated user missing from database",
-                true
-        );
+        return authenticationHandler.handleAuthenticatedUserMissing(ex, request);
     }
 
-    @ExceptionHandler(UserAccountDisabledException.class)
+    @ExceptionHandler(com.jaypal.authapp.domain.user.exception.UserAccountDisabledException.class)
     public ResponseEntity<Map<String, Object>> handleAccountDisabled(
-            UserAccountDisabledException ex,
+            com.jaypal.authapp.domain.user.exception.UserAccountDisabledException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.FORBIDDEN,
-                "Account disabled",
-                problemBuilder.resolveMessage(ex, "Your account has been disabled. Please contact support."),
-                request,
-                "Account disabled",
-                false
-        );
+        return authenticationHandler.handleAccountDisabled(ex, request);
     }
 
-    @ExceptionHandler(EmailNotVerifiedException.class)
+    @ExceptionHandler(com.jaypal.authapp.exception.auth.EmailNotVerifiedException.class)
     public ResponseEntity<Map<String, Object>> handleEmailNotVerified(
-            EmailNotVerifiedException ex,
+            com.jaypal.authapp.exception.auth.EmailNotVerifiedException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.FORBIDDEN,
-                "Email not verified",
-                problemBuilder.resolveMessage(ex, "Please verify your email address before logging in."),
-                request,
-                "Authentication failure: email not verified",
-                false
-        );
+        return authenticationHandler.handleEmailNotVerified(ex, request);
     }
 
-    @ExceptionHandler(LockedException.class)
+    @ExceptionHandler(org.springframework.security.authentication.LockedException.class)
     public ResponseEntity<Map<String, Object>> handleAccountLocked(
-            LockedException ex,
+            org.springframework.security.authentication.LockedException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.FORBIDDEN,
-                "Account locked",
-                problemBuilder.resolveMessage(ex, "Your account is locked. Please contact support."),
-                request,
-                "Authentication failure: account locked",
-                false
-        );
+        return authenticationHandler.handleAccountLocked(ex, request);
     }
 
-    @ExceptionHandler(InternalAuthenticationServiceException.class)
+    @ExceptionHandler(org.springframework.security.authentication.InternalAuthenticationServiceException.class)
     public ResponseEntity<Map<String, Object>> handleInternalAuthenticationServiceException(
-            InternalAuthenticationServiceException ex,
+            org.springframework.security.authentication.InternalAuthenticationServiceException ex,
             WebRequest request
     ) {
-        Throwable cause = ex.getCause();
-
-        if (cause instanceof DisabledException || cause instanceof UserAccountDisabledException) {
-            return problemBuilder.build(
-                    HttpStatus.FORBIDDEN,
-                    "Account disabled",
-                    problemBuilder.resolveMessage(cause, "Your account has been disabled. Please contact support."),
-                    request,
-                    "Authentication failure: account disabled (wrapped)",
-                    false
-            );
-        }
-
-        if (cause instanceof LockedException) {
-            return problemBuilder.build(
-                    HttpStatus.FORBIDDEN,
-                    "Account locked",
-                    problemBuilder.resolveMessage(cause, "Your account is locked. Please contact support."),
-                    request,
-                    "Authentication failure: account locked (wrapped)",
-                    false
-            );
-        }
-
-        if (cause instanceof BadCredentialsException) {
-            return problemBuilder.build(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid credentials",
-                    problemBuilder.resolveMessage(cause, "The email or password you entered is incorrect."),
-                    request,
-                    "Authentication failure: invalid credentials (wrapped)",
-                    false
-            );
-        }
-
-        log.error("Unhandled InternalAuthenticationServiceException", ex);
-
-        return problemBuilder.build(
-                HttpStatus.UNAUTHORIZED,
-                "Authentication failed",
-                problemBuilder.resolveMessage(ex, "Authentication failed. Please try again."),
-                request,
-                "Authentication failure: internal service exception",
-                true
-        );
+        return authenticationHandler.handleInternalAuthenticationServiceException(ex, request);
     }
 
     /* =====================
        EMAIL VERIFICATION
        ===================== */
 
-    @ExceptionHandler(EmailAlreadyExistsException.class)
+    @ExceptionHandler(com.jaypal.authapp.domain.user.exception.EmailAlreadyExistsException.class)
     public ResponseEntity<Map<String, Object>> handleEmailAlreadyExists(
-            EmailAlreadyExistsException ex,
+            com.jaypal.authapp.domain.user.exception.EmailAlreadyExistsException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.CONFLICT,
-                "Email already exists",
-                problemBuilder.resolveMessage(ex, "An account with this email already exists."),
-                request,
-                "Duplicate email registration attempt",
-                false
-        );
+        return emailVerificationHandler.handleEmailAlreadyExists(ex, request);
     }
 
-    @ExceptionHandler(EmailAlreadyVerifiedException.class)
+    @ExceptionHandler(com.jaypal.authapp.exception.auth.EmailAlreadyVerifiedException.class)
     public ResponseEntity<Map<String, Object>> handleAlreadyVerified(
-            EmailAlreadyVerifiedException ex,
+            com.jaypal.authapp.exception.auth.EmailAlreadyVerifiedException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.CONFLICT,
-                "Email already verified",
-                problemBuilder.resolveMessage(ex, "This email address is already verified."),
-                request,
-                "Email verification for already-verified account",
-                false
-        );
+        return emailVerificationHandler.handleEmailAlreadyVerified(ex, request);
     }
 
-    @ExceptionHandler({VerificationTokenExpiredException.class, VerificationTokenInvalidException.class})
+    @ExceptionHandler({
+            com.jaypal.authapp.exception.auth.VerificationTokenExpiredException.class,
+            com.jaypal.authapp.exception.auth.VerificationTokenInvalidException.class
+    })
     public ResponseEntity<Map<String, Object>> handleVerificationTokenFailures(
             RuntimeException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Verification failed",
-                problemBuilder.resolveMessage(ex, "Verification token is invalid or expired."),
-                request,
-                "Email verification failure: " + ex.getClass().getSimpleName(),
-                false
-        );
+        return emailVerificationHandler.handleVerificationTokenFailures(ex, request);
     }
 
-    @ExceptionHandler(EmailNotRegisteredException.class)
+    @ExceptionHandler(com.jaypal.authapp.exception.auth.EmailNotRegisteredException.class)
     public ResponseEntity<Void> swallowEmailNotRegistered() {
-        log.debug("Email verification resend call for non-existent email");
-        return ResponseEntity.ok().build();
+        return emailVerificationHandler.handleEmailNotRegistered();
     }
 
-    @ExceptionHandler(SilentEmailVerificationResendException.class)
+    @ExceptionHandler(com.jaypal.authapp.exception.auth.SilentEmailVerificationResendException.class)
     public ResponseEntity<Void> handleSilentVerificationResend(
-            SilentEmailVerificationResendException ex,
+            com.jaypal.authapp.exception.auth.SilentEmailVerificationResendException ex,
             WebRequest request
     ) {
-        log.debug(
-                "Silent verification resend | path={} | reason={}",
-                problemBuilder.extractPath(request),
-                ex.getMessage()
-        );
-        return ResponseEntity.ok().build();
+        return emailVerificationHandler.handleSilentVerificationResend(ex, request);
     }
 
-    @ExceptionHandler(EmailDeliveryFailedException.class)
+    @ExceptionHandler(com.jaypal.authapp.exception.auth.EmailDeliveryFailedException.class)
     public ResponseEntity<Map<String, Object>> handleEmailDeliveryFailed(
-            EmailDeliveryFailedException ex,
+            com.jaypal.authapp.exception.auth.EmailDeliveryFailedException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "Email delivery failed",
-                "We were unable to send the verification email. Please try again later.",
-                request,
-                "Email delivery failure",
-                true
-        );
+        return emailVerificationHandler.handleEmailDeliveryFailed(ex, request);
     }
 
     /* =====================
@@ -287,113 +163,71 @@ public class GlobalExceptionHandler {
        ===================== */
 
     @ExceptionHandler({
-            PasswordPolicyViolationException.class,
-            PasswordResetTokenInvalidException.class,
-            PasswordResetTokenExpiredException.class
+            com.jaypal.authapp.exception.auth.PasswordPolicyViolationException.class,
+            com.jaypal.authapp.exception.auth.PasswordResetTokenInvalidException.class,
+            com.jaypal.authapp.exception.auth.PasswordResetTokenExpiredException.class
     })
     public ResponseEntity<Map<String, Object>> handlePasswordFailures(
             RuntimeException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Password operation failed",
-                problemBuilder.resolveMessage(ex, "Password operation failed."),
-                request,
-                "Password operation failure: " + ex.getClass().getSimpleName(),
-                false
-        );
+        return passwordTokenHandler.handlePasswordFailures(ex, request);
     }
 
     @ExceptionHandler({
-            RefreshTokenExpiredException.class,
-            RefreshTokenNotFoundException.class,
-            RefreshTokenRevokedException.class,
-            RefreshTokenUserMismatchException.class,
-            RefreshTokenException.class,
-            InvalidRefreshTokenException.class,
-            MissingRefreshTokenException.class
+            com.jaypal.authapp.domain.token.exception.RefreshTokenExpiredException.class,
+            com.jaypal.authapp.domain.token.exception.RefreshTokenNotFoundException.class,
+            com.jaypal.authapp.domain.token.exception.RefreshTokenRevokedException.class,
+            com.jaypal.authapp.domain.token.exception.RefreshTokenUserMismatchException.class,
+            com.jaypal.authapp.domain.token.exception.RefreshTokenException.class,
+            com.jaypal.authapp.exception.auth.InvalidRefreshTokenException.class,
+            com.jaypal.authapp.exception.auth.MissingRefreshTokenException.class
     })
     public ResponseEntity<Map<String, Object>> handleRefreshTokenFailures(
             RuntimeException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.UNAUTHORIZED,
-                "Invalid refresh token",
-                problemBuilder.resolveMessage(ex, "Your session has expired. Please log in again."),
-                request,
-                "Refresh token failure: " + ex.getClass().getSimpleName(),
-                false
-        );
+        return passwordTokenHandler.handleRefreshTokenFailures(ex, request);
     }
 
     /* =====================
        USER DOMAIN
        ===================== */
 
-    @ExceptionHandler(InvalidRoleOperationException.class)
+    @ExceptionHandler(com.jaypal.authapp.domain.user.exception.InvalidRoleOperationException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidRoleOperation(
-            InvalidRoleOperationException ex,
+            com.jaypal.authapp.domain.user.exception.InvalidRoleOperationException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.CONFLICT,
-                "Invalid role operation",
-                problemBuilder.resolveMessage(ex, "Invalid role operation."),
-                request,
-                "Invalid role operation attempted",
-                false
-        );
+        return userDomainHandler.handleInvalidRoleOperation(ex, request);
     }
 
-    @ExceptionHandler(ResourceNotFoundException.class)
+    @ExceptionHandler(com.jaypal.authapp.domain.user.exception.ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleResourceNotFound(
-            ResourceNotFoundException ex,
+            com.jaypal.authapp.domain.user.exception.ResourceNotFoundException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.NOT_FOUND,
-                "Resource not found",
-                problemBuilder.resolveMessage(ex, "The requested resource was not found."),
-                request,
-                "Resource not found",
-                false
-        );
+        return userDomainHandler.handleResourceNotFound(ex, request);
     }
 
     /* =====================
        VALIDATION
        ===================== */
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(
-            MethodArgumentNotValidException ex,
+            org.springframework.web.bind.MethodArgumentNotValidException ex,
             WebRequest request
     ) {
-        Map<String, String> errors = new HashMap<>();
-        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            errors.put(error.getField(), error.getDefaultMessage());
-        }
-
-        return problemBuilder.buildValidationError(errors, request);
+        return validationHandler.handleMethodArgumentNotValid(ex, request);
     }
 
-    @ExceptionHandler(HandlerMethodValidationException.class)
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
     public ResponseEntity<Map<String, Object>> handleHandlerMethodValidation(
-            HandlerMethodValidationException ex,
+            org.springframework.web.method.annotation.HandlerMethodValidationException ex,
             WebRequest request
     ) {
-        Map<String, String> errors = new HashMap<>();
-
-        ex.getParameterValidationResults().forEach(result -> {
-            String paramName = result.getMethodParameter().getParameterName();
-            result.getResolvableErrors().forEach(error -> {
-                errors.put(paramName, error.getDefaultMessage());
-            });
-        });
-
-        return problemBuilder.buildValidationError(errors, request);
+        return validationHandler.handleHandlerMethodValidation(ex, request);
     }
 
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
@@ -401,154 +235,59 @@ public class GlobalExceptionHandler {
             jakarta.validation.ConstraintViolationException ex,
             WebRequest request
     ) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getConstraintViolations().forEach(v ->
-                errors.put(
-                        v.getPropertyPath() != null ? v.getPropertyPath().toString() : "parameter",
-                        v.getMessage()
-                )
-        );
-
-        return problemBuilder.buildValidationError(errors, request);
+        return validationHandler.handleConstraintViolation(ex, request);
     }
 
-    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Map<String, Object>> handleMethodArgumentTypeMismatch(
-            MethodArgumentTypeMismatchException ex,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
             WebRequest request
     ) {
-        String parameterName = ex.getName();
-        Object value = ex.getValue();
-        Class<?> requiredType = ex.getRequiredType();
-
-        String detail = (requiredType != null)
-                ? "Parameter '%s' must be of type '%s'."
-                .formatted(parameterName, requiredType.getSimpleName())
-                : "Invalid value for parameter '%s'.".formatted(parameterName);
-
-        if (value != null) {
-            detail += " Provided value: '%s'.".formatted(value);
-        }
-
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Invalid request parameter",
-                detail,
-                request,
-                "Method argument type mismatch: " + parameterName,
-                false
-        );
+        return validationHandler.handleMethodArgumentTypeMismatch(ex, request);
     }
 
     /* =====================
-       DATA & INFRASTRUCTURE
+       INFRASTRUCTURE
        ===================== */
 
-    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrity(
-            DataIntegrityViolationException ex,
+            org.springframework.dao.DataIntegrityViolationException ex,
             WebRequest request
     ) {
-        Throwable cause = ex.getCause();
-        if (cause instanceof org.hibernate.exception.ConstraintViolationException cve &&
-                cve.getConstraintName() != null &&
-                cve.getConstraintName().toLowerCase().contains("email")) {
-
-            return problemBuilder.build(
-                    HttpStatus.CONFLICT,
-                    "Email already exists",
-                    "An account with this email address already exists.",
-                    request,
-                    "Duplicate email constraint violation",
-                    false
-            );
-        }
-
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Invalid request",
-                problemBuilder.resolveMessage(ex, "Request violates data constraints."),
-                request,
-                "Data integrity violation",
-                true
-        );
+        return infrastructureHandler.handleDataIntegrity(ex, request);
     }
 
-    @ExceptionHandler(RateLimitExceededException.class)
+    @ExceptionHandler(com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException.class)
     public ResponseEntity<Map<String, Object>> handleRateLimit(
-            RateLimitExceededException ex,
+            com.jaypal.authapp.infrastructure.ratelimit.RateLimitExceededException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.TOO_MANY_REQUESTS,
-                "Too many requests",
-                problemBuilder.resolveMessage(ex, "Too many requests. Please try again later."),
-                request,
-                "Rate limit exceeded",
-                false
-        );
+        return infrastructureHandler.handleRateLimit(ex, request);
     }
 
-    @ExceptionHandler(NoResourceFoundException.class)
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNoResource(
-            NoResourceFoundException ex,
+            org.springframework.web.servlet.resource.NoResourceFoundException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.NOT_FOUND,
-                "Resource not found",
-                problemBuilder.resolveMessage(ex, "The requested resource was not found."),
-                request,
-                "404 Not Found",
-                false
-        );
+        return infrastructureHandler.handleNoResource(ex, request);
     }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleNotReadable(
-            HttpMessageNotReadableException ex,
+            org.springframework.http.converter.HttpMessageNotReadableException ex,
             WebRequest request
     ) {
-        String message = ex.getMessage();
-
-        if (message != null && message.contains("Required request body is missing")) {
-            return problemBuilder.build(
-                    HttpStatus.BAD_REQUEST,
-                    "Invalid request body",
-                    "Required request body is missing",
-                    request,
-                    "Required request body is missing",
-                    false
-            );
-        }
-
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Invalid request body",
-                "Malformed JSON or invalid field types.",
-                request,
-                "Request body deserialization failed",
-                false
-        );
+        return infrastructureHandler.handleHttpMessageNotReadable(ex, request);
     }
 
-    @ExceptionHandler(MissingServletRequestParameterException.class)
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
     public ResponseEntity<Map<String, Object>> handleMissingRequestParam(
-            MissingServletRequestParameterException ex,
+            org.springframework.web.bind.MissingServletRequestParameterException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Missing request parameter",
-                problemBuilder.resolveMessage(
-                        ex,
-                        "Required request parameter '%s' is missing."
-                                .formatted(ex.getParameterName())
-                ),
-                request,
-                "Missing request parameter: " + ex.getParameterName(),
-                false
-        );
+        return infrastructureHandler.handleMissingRequestParameter(ex, request);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -556,56 +295,15 @@ public class GlobalExceptionHandler {
             IllegalArgumentException ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.BAD_REQUEST,
-                "Invalid request",
-                problemBuilder.resolveMessage(ex, "Invalid request."),
-                request,
-                "Client error: illegal argument",
-                false
-        );
+        return infrastructureHandler.handleIllegalArgument(ex, request);
     }
 
-    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ProblemDetail> handleMethodNotSupported(
-            HttpRequestMethodNotSupportedException ex,
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<org.springframework.http.ProblemDetail> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException ex,
             WebRequest request
     ) {
-        Set<HttpMethod> supported = ex.getSupportedHttpMethods();
-
-        String supportedMethods = (supported == null || supported.isEmpty())
-                ? "N/A"
-                : String.join(", ", supported.stream().map(HttpMethod::name).toList());
-
-        String correlationId = problemBuilder.resolveCorrelationId(request);
-        String path = problemBuilder.extractPath(request);
-
-        log.warn(
-                "Method not supported | {} → {} | path={} | correlationId={}",
-                ex.getMethod(),
-                supportedMethods,
-                path,
-                correlationId
-        );
-
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.METHOD_NOT_ALLOWED);
-        problem.setType(URI.create(TYPE_ABOUT_BLANK));
-        problem.setTitle("Method not allowed");
-        problem.setDetail(
-                "HTTP method '%s' is not supported. Supported methods: %s."
-                        .formatted(ex.getMethod(), supportedMethods)
-        );
-        problem.setInstance(URI.create(path));
-        problem.setProperty("correlationId", correlationId);
-        problem.setProperty("timestamp", Instant.now().toString());
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.add(CORRELATION_HEADER, correlationId);
-        if (supported != null && !supported.isEmpty()) {
-            headers.setAllow(supported);
-        }
-
-        return new ResponseEntity<>(problem, headers, HttpStatus.METHOD_NOT_ALLOWED);
+        return infrastructureHandler.handleMethodNotSupported(ex, request);
     }
 
     @ExceptionHandler(Exception.class)
@@ -613,13 +311,6 @@ public class GlobalExceptionHandler {
             Exception ex,
             WebRequest request
     ) {
-        return problemBuilder.build(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "Internal server error",
-                "An unexpected error occurred. Please contact support if the problem persists.",
-                request,
-                "Unhandled exception: " + ex.getClass().getSimpleName(),
-                true
-        );
+        return infrastructureHandler.handleGenericException(ex, request);
     }
 }

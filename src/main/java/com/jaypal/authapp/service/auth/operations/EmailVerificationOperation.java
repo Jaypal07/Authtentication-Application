@@ -1,5 +1,6 @@
 package com.jaypal.authapp.service.auth.operations;
 
+import com.jaypal.authapp.domain.audit.entity.AuthFailureReason;
 import com.jaypal.authapp.exception.auth.VerificationTokenInvalidException;
 import com.jaypal.authapp.infrastructure.audit.context.AuditContextHolder;
 import com.jaypal.authapp.service.auth.EmailVerificationService;
@@ -33,7 +34,7 @@ public class EmailVerificationOperation {
 
         if (!sent) {
             log.debug("Resend verification requested for already-verified user: {}", email);
-            AuditContextHolder.markNoOp();
+            AuditContextHolder.markFailure(AuthFailureReason.EMAIL_ALREADY_VERIFIED);
         } else {
             log.debug("Verification email sent to {}", email);
         }

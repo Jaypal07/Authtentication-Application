@@ -94,17 +94,3 @@ public final class AuthPrincipal implements UserDetails, Serializable {
         return "AuthPrincipal{userId=" + userId + ", email='" + email + "'}";
     }
 }
-
-/*
-CHANGELOG:
-1. Implemented Serializable for session storage compatibility
-2. Added serialVersionUID for serialization stability
-3. Added null checks for userId and email in constructor
-4. Made authorities collection immutable
-5. Added null handling for authorities parameter
-6. Implemented equals() and hashCode() based on userId
-7. Implemented toString() for debugging (without sensitive data)
-8. Made class final to prevent inheritance issues
-9. Added isEnabled() to return true (handled in UserDetailsService)
-10. Used Collections.unmodifiableCollection for defensive copying
-*/

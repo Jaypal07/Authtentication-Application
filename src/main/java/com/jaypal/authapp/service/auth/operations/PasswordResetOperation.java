@@ -2,6 +2,7 @@ package com.jaypal.authapp.service.auth.operations;
 
 import com.jaypal.authapp.config.properties.FrontendProperties;
 import com.jaypal.authapp.config.properties.PasswordPolicy;
+import com.jaypal.authapp.domain.audit.entity.AuthFailureReason;
 import com.jaypal.authapp.domain.user.entity.PasswordResetToken;
 import com.jaypal.authapp.domain.user.entity.User;
 import com.jaypal.authapp.domain.user.repository.PasswordResetTokenRepository;
@@ -35,8 +36,8 @@ public class PasswordResetOperation {
 
     public void initiate(String email) {
         userRepository.findByEmail(email).ifPresentOrElse(
-                user -> processInitiation(user),
-                () -> handleNonExistentEmail()
+                this::processInitiation,
+                this::handleNonExistentEmail
         );
     }
 
@@ -65,7 +66,7 @@ public class PasswordResetOperation {
                     user.isEnabled(),
                     user.isEmailVerified()
             );
-            AuditContextHolder.markNoOp();
+            AuditContextHolder.markFailure(AuthFailureReason.EMAIL_NOT_VERIFIED);
             return;
         }
 
@@ -75,7 +76,7 @@ public class PasswordResetOperation {
     }
 
     private void handleNonExistentEmail() {
-        AuditContextHolder.markNoOp();
+        AuditContextHolder.markFailure(AuthFailureReason.EMAIL_NOT_REGISTERED);
         log.debug("Password reset requested for non-existent email");
     }
 

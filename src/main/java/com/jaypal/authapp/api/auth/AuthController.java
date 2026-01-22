@@ -179,7 +179,7 @@ public class AuthController {
     @AuthAudit(
             event = AuthAuditEvent.PASSWORD_RESET_REQUESTED,
             subject = AuditSubjectType.EMAIL,
-            subjectParam = "email"
+            subjectParam = "request"
     )
     @PostMapping("/forgot-password")
     public ResponseEntity<Map<String, String>> initiatePasswordReset(

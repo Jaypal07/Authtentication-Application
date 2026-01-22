@@ -42,6 +42,12 @@ public class AuthAuditAspect {
     @AfterReturning(pointcut = "@annotation(authAudit)", returning = "result")
     public void afterSuccess(JoinPoint joinPoint, AuthAudit authAudit, Object result) {
         AuditOutcome outcome = outcomeResolver.determineOutcome(result);
+        AuthFailureReason failureReason = null;
+
+        // ✅ Pull failure reason from context for business failures
+        if (outcome == AuditOutcome.FAILURE) {
+            failureReason = AuditContextHolder.getFailureReason();
+        }
 
         log.debug(
                 "AuthAudit SUCCESS intercepted: event={}, resolvedOutcome={}, method={}",
@@ -50,7 +56,7 @@ public class AuthAuditAspect {
                 joinPoint.getSignature().toShortString()
         );
 
-        record(joinPoint, authAudit, result, null, outcome);
+        record(joinPoint, authAudit, result, failureReason, outcome);
     }
 
     @AfterThrowing(pointcut = "@annotation(authAudit)", throwing = "ex")

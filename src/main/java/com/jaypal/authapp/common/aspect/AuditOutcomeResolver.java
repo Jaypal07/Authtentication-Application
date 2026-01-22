@@ -14,13 +14,23 @@ import org.springframework.stereotype.Component;
 public class AuditOutcomeResolver {
 
     public AuditOutcome determineOutcome(Object result) {
-        // Context-level NO_OP (business decision)
+
+        // 1️⃣ Explicit business FAILURE (highest priority)
+        if (AuditContextHolder.isFailure()) {
+            log.debug(
+                    "Audit outcome overridden to FAILURE via AuditContextHolder, reason={}",
+                    AuditContextHolder.getFailureReason()
+            );
+            return AuditOutcome.FAILURE;
+        }
+
+        // 2️⃣ Explicit business NO_OP
         if (AuditContextHolder.isNoOp()) {
             log.debug("Audit outcome overridden to NO_OP via AuditContextHolder");
             return AuditOutcome.NO_OP;
         }
 
-        // Return-based NO_OP
+        // 3️⃣ Return-based NO_OP (legacy / safety)
         if (result == null) {
             return AuditOutcome.NO_OP;
         }
@@ -29,6 +39,7 @@ public class AuditOutcomeResolver {
             return AuditOutcome.NO_OP;
         }
 
+        // 4️⃣ Default success
         return AuditOutcome.SUCCESS;
     }
 }

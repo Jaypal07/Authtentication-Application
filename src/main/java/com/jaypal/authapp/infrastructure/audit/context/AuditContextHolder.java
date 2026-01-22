@@ -11,9 +11,9 @@ public final class AuditContextHolder {
 
     private static final ThreadLocal<Boolean> NO_OP = ThreadLocal.withInitial(() -> false);
 
-    private static final ThreadLocal<Boolean> FAILURE = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Boolean> REJECTION = ThreadLocal.withInitial(() -> false);
 
-    private static final ThreadLocal<AuthFailureReason> FAILURE_REASON = new ThreadLocal<>();
+    private static final ThreadLocal<AuthFailureReason> REJECTION_REASON = new ThreadLocal<>();
 
     private AuditContextHolder() {
         throw new UnsupportedOperationException("Utility class");
@@ -43,24 +43,24 @@ public final class AuditContextHolder {
         return Boolean.TRUE.equals(NO_OP.get());
     }
 
-    public static void markFailure(@NonNull AuthFailureReason reason) {
-        FAILURE.set(true);
-        FAILURE_REASON.set(reason);
-        NO_OP.remove(); // ensure NO_OP never wins over FAILURE
+    public static void markRejection(@NonNull AuthFailureReason reason) {
+        REJECTION.set(true);
+        REJECTION_REASON.set(reason);
+        NO_OP.remove(); // rejection always wins
     }
 
-    public static boolean isFailure() {
-        return Boolean.TRUE.equals(FAILURE.get());
+    public static boolean isRejection() {
+        return Boolean.TRUE.equals(REJECTION.get());
     }
 
-    public static AuthFailureReason getFailureReason() {
-        return FAILURE_REASON.get();
+    public static AuthFailureReason getRejectionReason() {
+        return REJECTION_REASON.get();
     }
 
     public static void markSuccess() {
         NO_OP.remove();
-        FAILURE.remove();
-        FAILURE_REASON.remove();
+        REJECTION.remove();
+        REJECTION_REASON.remove();
     }
 
     /* ===================== Cleanup ===================== */
@@ -68,8 +68,8 @@ public final class AuditContextHolder {
     public static void clear() {
         CONTEXT.remove();
         NO_OP.remove();
-        FAILURE.remove();
-        FAILURE_REASON.remove();
+        REJECTION.remove();
+        REJECTION_REASON.remove();
     }
 
     /* ===================== Async propagation ===================== */
@@ -81,14 +81,19 @@ public final class AuditContextHolder {
         public Runnable decorate(@NonNull Runnable task) {
             final AuditRequestContext context = getContext();
             final boolean noOp = isNoOp();
-            final boolean failure = isFailure();
-            final AuthFailureReason failureReason = getFailureReason();
+            final boolean rejection = isRejection();
+            final AuthFailureReason reason = getRejectionReason();
 
             return () -> {
                 try {
                     setContext(context);
-                    if (noOp) markNoOp();
-                    if (failure) markFailure(failureReason);
+                    if (noOp) {
+                        markNoOp();
+                    }
+
+                    if (rejection) {
+                        markRejection(reason);
+                    }
                     task.run();
                 } finally {
                     clear();

@@ -45,8 +45,8 @@ public class AuthAuditAspect {
         AuthFailureReason failureReason = null;
 
         // ✅ Pull failure reason from context for business failures
-        if (outcome == AuditOutcome.FAILURE) {
-            failureReason = AuditContextHolder.getFailureReason();
+        if (outcome == AuditOutcome.REJECTION) {
+            failureReason = AuditContextHolder.getRejectionReason();
         }
 
         log.debug(

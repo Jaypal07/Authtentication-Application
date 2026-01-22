@@ -45,6 +45,11 @@ public class AuditInvariantValidator {
                     "Failure outcome requires failureReason for event: " + event
             );
         }
+        if (outcome == AuditOutcome.REJECTION && failureReason == null) {
+            throw new IllegalArgumentException(
+                    "Rejection outcome requires failureReason for event: " + event
+            );
+        }
 
         if (outcome == AuditOutcome.SUCCESS && failureReason != null) {
             throw new IllegalArgumentException(

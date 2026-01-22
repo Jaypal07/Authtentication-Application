@@ -34,7 +34,7 @@ public class EmailVerificationOperation {
 
         if (!sent) {
             log.debug("Resend verification requested for already-verified user: {}", email);
-            AuditContextHolder.markFailure(AuthFailureReason.EMAIL_ALREADY_VERIFIED);
+            AuditContextHolder.markRejection(AuthFailureReason.EMAIL_ALREADY_VERIFIED);
         } else {
             log.debug("Verification email sent to {}", email);
         }

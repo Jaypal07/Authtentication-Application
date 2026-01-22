@@ -15,7 +15,7 @@ public class AuditSeverityCalculator {
     public AuditSeverity calculate(AuditOutcome outcome, AuthFailureReason failureReason) {
         return switch (outcome) {
             case SUCCESS, NO_OP -> AuditSeverity.LOW;
-            case FAILURE -> calculateFailureSeverity(failureReason);
+            case FAILURE, REJECTION -> calculateFailureSeverity(failureReason);
         };
     }
 

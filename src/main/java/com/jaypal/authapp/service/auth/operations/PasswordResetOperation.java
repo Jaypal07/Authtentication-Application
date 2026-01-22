@@ -66,7 +66,7 @@ public class PasswordResetOperation {
                     user.isEnabled(),
                     user.isEmailVerified()
             );
-            AuditContextHolder.markFailure(AuthFailureReason.EMAIL_NOT_VERIFIED);
+            AuditContextHolder.markRejection(AuthFailureReason.EMAIL_NOT_VERIFIED);
             return;
         }
 
@@ -76,7 +76,7 @@ public class PasswordResetOperation {
     }
 
     private void handleNonExistentEmail() {
-        AuditContextHolder.markFailure(AuthFailureReason.EMAIL_NOT_REGISTERED);
+        AuditContextHolder.markRejection(AuthFailureReason.EMAIL_NOT_REGISTERED);
         log.debug("Password reset requested for non-existent email");
     }
 

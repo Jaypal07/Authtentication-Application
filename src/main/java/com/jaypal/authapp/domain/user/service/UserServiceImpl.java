@@ -69,7 +69,7 @@ public class UserServiceImpl implements UserService {
 
         } catch (DataIntegrityViolationException ex) {
             // Business rule violation → no state change → NO_OP
-            AuditContextHolder.markFailure(AuthFailureReason.EMAIL_ALREADY_EXISTS);
+            AuditContextHolder.markRejection(AuthFailureReason.EMAIL_ALREADY_EXISTS);
 
             log.info(
                     "Duplicate email registration attempt detected. " + "Audit outcome marked as NO_OP. email={}",

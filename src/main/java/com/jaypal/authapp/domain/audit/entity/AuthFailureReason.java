@@ -15,6 +15,7 @@ public enum AuthFailureReason {
     /* EMAIL */
     EMAIL_ALREADY_EXISTS(AuditSeverity.LOW),
     EMAIL_ALREADY_VERIFIED(AuditSeverity.LOW),
+    EMAIL_NOT_VERIFIED(AuditSeverity.LOW),
     EMAIL_NOT_REGISTERED(AuditSeverity.LOW),
     EMAIL_VERIFICATION_TOKEN_INVALID(AuditSeverity.HIGH),
     EMAIL_VERIFICATION_TOKEN_EXPIRED(AuditSeverity.MEDIUM),

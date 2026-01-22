@@ -1,5 +1,6 @@
 package com.jaypal.authapp.infrastructure.userdetails;
 
+import com.jaypal.authapp.exception.auth.EmailNotVerifiedException;
 import com.jaypal.authapp.exception.auth.SilentEmailVerificationResendException;
 import com.jaypal.authapp.infrastructure.principal.AuthPrincipal;
 import com.jaypal.authapp.domain.user.service.PermissionService;
@@ -48,9 +49,7 @@ public class CustomUserDetailService implements UserDetailsService {
 
         if (!user.isEmailVerified()) {
             log.warn("Login attempt for unverified user: {}", user.getId());
-            throw new SilentEmailVerificationResendException(
-                    "Resend verification requested for unverified email: " + email
-            );
+            throw new EmailNotVerifiedException();
         }
 
         final Set<String> permissionNames = permissionService.resolvePermissions(user.getId())

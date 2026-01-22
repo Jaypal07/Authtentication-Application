@@ -108,6 +108,10 @@ public class AuthenticationExceptionHandler {
             return createAccountLockedResponse(cause, request);
         }
 
+        if (cause instanceof EmailNotVerifiedException emailNotVerified) {
+            return createEmailNotVerifiedResponse(emailNotVerified, request);
+        }
+
         if (cause instanceof BadCredentialsException) {
             return createBadCredentialsResponse(cause, request);
         }
@@ -153,6 +157,23 @@ public class AuthenticationExceptionHandler {
                 problemBuilder.resolveMessage(cause, "Your account is locked. Please contact support."),
                 request,
                 "Authentication failure: account locked (wrapped)",
+                false
+        );
+    }
+
+    private ResponseEntity<Map<String, Object>> createEmailNotVerifiedResponse(
+            Throwable cause,
+            WebRequest request
+    ) {
+        return problemBuilder.build(
+                HttpStatus.FORBIDDEN,
+                "Email not verified",
+                problemBuilder.resolveMessage(
+                        cause,
+                        "Please verify your email address before logging in."
+                ),
+                request,
+                "Authentication failure: email not verified (wrapped)",
                 false
         );
     }

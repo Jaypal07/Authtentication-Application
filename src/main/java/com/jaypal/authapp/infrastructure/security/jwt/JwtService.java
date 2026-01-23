@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 public class JwtService {
 
     private static final int MINIMUM_SECRET_LENGTH = 64;
+
     private static final String CLAIM_TYPE = "typ";
     private static final String CLAIM_EMAIL = "email";
     private static final String CLAIM_ROLES = "roles";
@@ -49,36 +50,26 @@ public class JwtService {
     public void init() {
         validateConfiguration();
         this.secretKey = JwtUtils.createKey(rawSecret);
-        log.info("JWT Service initialized - Access TTL: {}s, Refresh TTL: {}s, Issuer: {}",
-                accessTtlSeconds, refreshTtlSeconds, issuer);
+        log.info(
+                "JWT Service initialized - Access TTL: {}s, Refresh TTL: {}s, Issuer: {}",
+                accessTtlSeconds, refreshTtlSeconds, issuer
+        );
     }
 
     private void validateConfiguration() {
-        if (rawSecret == null || rawSecret.isBlank()) {
-            throw new IllegalStateException("JWT secret cannot be null or empty");
-        }
+        requireNonBlank(rawSecret, "JWT secret");
+        requirePositive(accessTtlSeconds, "Access TTL");
+        requirePositive(refreshTtlSeconds, "Refresh TTL");
+        requireNonBlank(issuer, "JWT issuer");
 
         if (rawSecret.length() < MINIMUM_SECRET_LENGTH) {
             throw new IllegalStateException(
-                    String.format("JWT secret must be at least %d characters. Current length: %d",
-                            MINIMUM_SECRET_LENGTH, rawSecret.length())
+                    "JWT secret must be at least " + MINIMUM_SECRET_LENGTH + " characters"
             );
         }
 
-        if (accessTtlSeconds <= 0) {
-            throw new IllegalStateException("JWT access TTL must be positive");
-        }
-
-        if (refreshTtlSeconds <= 0) {
-            throw new IllegalStateException("JWT refresh TTL must be positive");
-        }
-
         if (refreshTtlSeconds < accessTtlSeconds) {
-            throw new IllegalStateException("Refresh TTL must be greater than or equal to access TTL");
-        }
-
-        if (issuer == null || issuer.isBlank()) {
-            throw new IllegalStateException("JWT issuer cannot be null or empty");
+            throw new IllegalStateException("Refresh TTL must be >= access TTL");
         }
     }
 
@@ -88,14 +79,13 @@ public class JwtService {
         Objects.requireNonNull(user.getEmail(), "User email cannot be null");
         Objects.requireNonNull(permissions, "Permissions cannot be null");
 
-        final Map<String, Object> claims = new HashMap<>();
-        claims.put(CLAIM_TYPE, TokenType.ACCESS.name().toLowerCase());
-        claims.put(CLAIM_EMAIL, user.getEmail());
-        claims.put(CLAIM_ROLES, new ArrayList<>(user.getRoles()));
-        claims.put(CLAIM_PERMS, permissions.stream()
-                .map(Enum::name)
-                .collect(Collectors.toList()));
-        claims.put(CLAIM_PV, user.getPermissionVersion());
+        final Map<String, Object> claims = Map.of(
+                CLAIM_TYPE, TokenType.ACCESS.name().toLowerCase(),
+                CLAIM_EMAIL, user.getEmail(),
+                CLAIM_ROLES, new ArrayList<>(user.getRoles()),
+                CLAIM_PERMS, permissions.stream().map(Enum::name).toList(),
+                CLAIM_PV, user.getPermissionVersion()
+        );
 
         return JwtUtils.buildAccessToken(
                 secretKey,
@@ -107,14 +97,10 @@ public class JwtService {
     }
 
     public Jws<Claims> parseAccessToken(String token) {
-        if (token == null || token.isBlank()) {
-            throw new IllegalArgumentException("Token cannot be null or empty");
-        }
-
         final Jws<Claims> parsed = JwtUtils.parse(secretKey, issuer, token);
         final String type = parsed.getBody().get(CLAIM_TYPE, String.class);
 
-        if (type == null || TokenType.from(type) != TokenType.ACCESS) {
+        if (TokenType.from(type) != TokenType.ACCESS) {
             throw new IllegalArgumentException("Token is not an access token");
         }
 
@@ -122,72 +108,50 @@ public class JwtService {
     }
 
     public UUID extractUserId(Claims claims) {
-        Objects.requireNonNull(claims, "Claims cannot be null");
-        final String subject = claims.getSubject();
-
-        if (subject == null || subject.isBlank()) {
-            throw new IllegalArgumentException("Token subject (user ID) is missing");
-        }
-
-        try {
-            return UUID.fromString(subject);
-        } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Invalid user ID format in token: " + subject, ex);
-        }
+        return UUID.fromString(requireNonBlank(claims.getSubject(), "Token subject"));
     }
 
     public long extractPermissionVersion(Claims claims) {
-        Objects.requireNonNull(claims, "Claims cannot be null");
         final Long pv = claims.get(CLAIM_PV, Long.class);
-
         if (pv == null) {
             throw new IllegalArgumentException("Permission version missing from token");
         }
-
         return pv;
     }
 
     public Set<String> extractRoles(Claims claims) {
-        Objects.requireNonNull(claims, "Claims cannot be null");
         return extractStringSet(claims, CLAIM_ROLES);
     }
 
     public Set<String> extractPermissions(Claims claims) {
-        Objects.requireNonNull(claims, "Claims cannot be null");
         return extractStringSet(claims, CLAIM_PERMS);
     }
 
     public String extractEmail(Claims claims) {
-        Objects.requireNonNull(claims, "Claims cannot be null");
-        final String email = claims.get(CLAIM_EMAIL, String.class);
-
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("Email missing from token");
-        }
-
-        return email;
+        return requireNonBlank(claims.get(CLAIM_EMAIL, String.class), "Email");
     }
 
-    private Set<String> extractStringSet(Claims claims, String claimKey) {
-        final Object raw = claims.get(claimKey);
+    private Set<String> extractStringSet(Claims claims, String key) {
+        final Object raw = claims.get(key);
+        if (raw == null) return Set.of();
 
-        if (raw == null) {
-            return Collections.emptySet();
+        if (!(raw instanceof List<?> list)) {
+            throw new IllegalStateException("Claim '" + key + "' is not a list");
         }
 
-        if (!(raw instanceof List<?>)) {
-            throw new IllegalStateException("Claim '" + claimKey + "' is not a list");
-        }
-
-        final List<?> list = (List<?>) raw;
         return list.stream()
-                .filter(Objects::nonNull)
-                .map(obj -> {
-                    if (!(obj instanceof String)) {
-                        throw new IllegalStateException("Claim '" + claimKey + "' contains non-string value");
-                    }
-                    return (String) obj;
-                })
+                .map(String.class::cast)
                 .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static void requirePositive(long value, String name) {
+        if (value <= 0) throw new IllegalStateException(name + " must be positive");
+    }
+
+    private static String requireNonBlank(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(name + " cannot be null or empty");
+        }
+        return value;
     }
 }

@@ -1,9 +1,9 @@
 package com.jaypal.authapp.infrastructure.security.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jaypal.authapp.infrastructure.security.jwt.JwtService;
-import com.jaypal.authapp.infrastructure.principal.AuthPrincipal;
 import com.jaypal.authapp.domain.user.repository.UserRepository;
+import com.jaypal.authapp.infrastructure.principal.AuthPrincipal;
+import com.jaypal.authapp.infrastructure.security.jwt.JwtService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -30,6 +30,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final String AUTH_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final int BEARER_PREFIX_LENGTH = 7;
 
@@ -44,63 +45,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain chain
     ) throws ServletException, IOException {
 
-        final String authHeader = request.getHeader("Authorization");
+        final Optional<String> tokenOpt = extractBearerToken(request);
 
-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+        if (tokenOpt.isEmpty()) {
             chain.doFilter(request, response);
             return;
         }
 
         try {
-            final String token = authHeader.substring(BEARER_PREFIX_LENGTH).trim();
-
-            if (token.isEmpty()) {
-                chain.doFilter(request, response);
-                return;
-            }
-
-            final Jws<Claims> parsed = jwtService.parseAccessToken(token);
-            final Claims claims = parsed.getBody();
-            final UUID userId = jwtService.extractUserId(claims);
-            final long tokenPermissionVersion = jwtService.extractPermissionVersion(claims);
-
-            final Long currentPermissionVersion = userRepository
-                    .findPermissionVersionById(userId)
-                    .orElse(null);
-
-            if (currentPermissionVersion == null) {
-                log.warn("Token validation failed: User {} not found or deleted", userId);
-                sendUnauthorized(response, "User not found");
-                return;
-            }
-
-            if (tokenPermissionVersion != currentPermissionVersion) {
-                log.warn("Token validation failed: Permission version mismatch for user {}. Token PV: {}, Current PV: {}",
-                        userId, tokenPermissionVersion, currentPermissionVersion);
-                sendUnauthorized(response, "Token permissions outdated");
-                return;
-            }
-
-            final Set<SimpleGrantedAuthority> authorities = new HashSet<>();
-            jwtService.extractRoles(claims)
-                    .forEach(role -> authorities.add(new SimpleGrantedAuthority(role)));
-            jwtService.extractPermissions(claims)
-                    .forEach(perm -> authorities.add(new SimpleGrantedAuthority(perm)));
-
-            final AuthPrincipal principal = new AuthPrincipal(
-                    userId,
-                    jwtService.extractEmail(claims),
-                    null,
-                    authorities
+            authenticate(tokenOpt.get(), request);
+            log.debug("JWT authentication successful for user: {}",
+                    ((AuthPrincipal) SecurityContextHolder.getContext()
+                            .getAuthentication()
+                            .getPrincipal()).getUserId()
             );
-
-            final UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(principal, null, authorities);
-            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-
-            log.debug("JWT authentication successful for user: {}", userId);
 
         } catch (ExpiredJwtException ex) {
             log.debug("JWT token expired: {}", ex.getMessage());
@@ -123,11 +81,84 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
+    private Optional<String> extractBearerToken(HttpServletRequest request) {
+        final String header = request.getHeader(AUTH_HEADER);
+
+        if (header == null || !header.startsWith(BEARER_PREFIX)) {
+            return Optional.empty();
+        }
+
+        final String token = header.substring(BEARER_PREFIX_LENGTH).trim();
+        return token.isEmpty() ? Optional.empty() : Optional.of(token);
+    }
+
+    private void authenticate(String token, HttpServletRequest request) {
+        final Jws<Claims> parsed = jwtService.parseAccessToken(token);
+        final Claims claims = parsed.getBody();
+
+        final UUID userId = jwtService.extractUserId(claims);
+        final long tokenPermissionVersion = jwtService.extractPermissionVersion(claims);
+
+        validatePermissionVersion(userId, tokenPermissionVersion);
+
+        final Set<SimpleGrantedAuthority> authorities = extractAuthorities(claims);
+        final AuthPrincipal principal = buildPrincipal(userId, claims, authorities);
+
+        final UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(principal, null, authorities);
+
+        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+    }
+
+    private void validatePermissionVersion(UUID userId, long tokenPermissionVersion) {
+        final Long currentPermissionVersion = userRepository
+                .findPermissionVersionById(userId)
+                .orElse(null);
+
+        if (currentPermissionVersion == null) {
+            log.warn("Token validation failed: User {} not found or deleted", userId);
+            throw new IllegalStateException("User not found");
+        }
+
+        if (tokenPermissionVersion != currentPermissionVersion) {
+            log.warn(
+                    "Token validation failed: Permission version mismatch for user {}. Token PV: {}, Current PV: {}",
+                    userId, tokenPermissionVersion, currentPermissionVersion
+            );
+            throw new IllegalStateException("Token permissions outdated");
+        }
+    }
+
+    private Set<SimpleGrantedAuthority> extractAuthorities(Claims claims) {
+        final Set<SimpleGrantedAuthority> authorities = new HashSet<>();
+
+        jwtService.extractRoles(claims)
+                .forEach(role -> authorities.add(new SimpleGrantedAuthority(role)));
+
+        jwtService.extractPermissions(claims)
+                .forEach(perm -> authorities.add(new SimpleGrantedAuthority(perm)));
+
+        return authorities;
+    }
+
+    private AuthPrincipal buildPrincipal(
+            UUID userId,
+            Claims claims,
+            Set<SimpleGrantedAuthority> authorities
+    ) {
+        return new AuthPrincipal(
+                userId,
+                jwtService.extractEmail(claims),
+                null,
+                authorities
+        );
+    }
+
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
         final String path = request.getRequestURI();
-        return path.startsWith("/api/v1/auth/") ||
-                path.equals("/api/v1/auth");
+        return path.startsWith("/api/v1/auth/") || path.equals("/api/v1/auth");
     }
 
     private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
@@ -145,19 +176,3 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
     }
 }
-
-/*
-CHANGELOG:
-1. Added comprehensive logging for security audit trail
-2. Fail-fast with explicit error responses instead of silent 401
-3. Distinguished between expired, invalid, and malformed tokens
-4. Added null check for deleted users before PV comparison
-5. Extracted constants for magic strings
-6. Added WebAuthenticationDetailsSource for request metadata
-7. Used ObjectMapper for consistent JSON error responses
-8. Added @NonNull annotations for null-safety
-9. Fixed shouldNotFilter to handle trailing slashes
-10. Added charset UTF-8 to prevent encoding issues
-11. Changed generic Exception catch to specific JWT exceptions
-12. Added timestamp to error responses for debugging
-*/

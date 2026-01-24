@@ -18,14 +18,12 @@ import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.AfterThrowing;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * Refactored AuthAuditAspect with improved separation of concerns.
- * Each responsibility is clearly delineated and delegated.
- */
 @Slf4j
 @Aspect
 @Component
@@ -44,7 +42,6 @@ public class AuthAuditAspect {
         AuditOutcome outcome = outcomeResolver.determineOutcome(result);
         AuthFailureReason failureReason = null;
 
-        // ✅ Pull failure reason from context for business failures
         if (outcome == AuditOutcome.REJECTION) {
             failureReason = AuditContextHolder.getRejectionReason();
         }
@@ -62,7 +59,18 @@ public class AuthAuditAspect {
     @AfterThrowing(pointcut = "@annotation(authAudit)", throwing = "ex")
     public void afterFailure(JoinPoint joinPoint, AuthAudit authAudit, Throwable ex) {
 
-        // Handle idempotent NO_OP cases
+        // ✅ SECURITY BOUNDARY:
+        // Authorization failures are audited centrally via AuditLogger
+        if (isAuthorizationException(ex)) {
+            log.debug(
+                    "AuthAudit skipped for authorization failure (handled by security audit): event={}, exception={}",
+                    authAudit.event(),
+                    ex.getClass().getSimpleName()
+            );
+            return;
+        }
+
+        // Idempotent NO_OP cases
         if (isIdempotentNoOp(ex, authAudit)) {
             record(joinPoint, authAudit, null, null, AuditOutcome.NO_OP);
             return;
@@ -78,6 +86,11 @@ public class AuthAuditAspect {
         );
 
         record(joinPoint, authAudit, null, reason, AuditOutcome.FAILURE);
+    }
+
+    private boolean isAuthorizationException(Throwable ex) {
+        return ex instanceof AccessDeniedException
+                || ex instanceof AuthorizationDeniedException;
     }
 
     private boolean isIdempotentNoOp(Throwable ex, AuthAudit authAudit) {
@@ -174,13 +187,11 @@ public class AuthAuditAspect {
             AuthAudit authAudit,
             Object result
     ) {
-        // Try security context first
         UUID userId = identityResolver.fromSecurityContext();
         if (userId != null) {
             return AuditSubject.userId(userId.toString());
         }
 
-        // Try result extraction
         if (result != null) {
             UUID fromResult = identityResolver.fromResult(result);
             if (fromResult != null) {
@@ -188,7 +199,6 @@ public class AuthAuditAspect {
             }
         }
 
-        // Fall back to parameter resolution
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         return subjectResolver.resolve(
                 authAudit,

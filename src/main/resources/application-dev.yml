@@ -21,14 +21,14 @@ spring:
     password: 1234
     driver-class-name: org.postgresql.Driver
     hikari:
-      pool-name: ${DB_POOL_NAME:HikariCP}
-      maximum-pool-size: ${DB_MAX_POOL_SIZE:20}
-      minimum-idle: ${DB_MIN_IDLE:5}
-      connection-timeout: ${DB_CONNECTION_TIMEOUT:10000}
-      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
-      max-lifetime: ${DB_MAX_LIFETIME:1800000}
-      validation-timeout: ${DB_VALIDATION_TIMEOUT:5000}
-      leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD:60000}
+      pool-name: HikariCP
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 10000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      validation-timeout: 5000
+      leak-detection-threshold: 60000
       auto-commit: false
       connection-test-query: SELECT 1
 
@@ -53,17 +53,17 @@ spring:
           provider_disables_autocommit: true
 
   # ===============================
-  # REDIS (REDIS CLOUD / SSL)
+  # REDIS (DEV – NO SSL)
   # ===============================
   data:
     redis:
-      host: ${REDIS_HOST:redis-19112.c212.ap-south-1-1.ec2.cloud.redislabs.com}
-      port: ${REDIS_PORT:19112}
-      username: ${REDIS_USERNAME:default}
-      password: ${REDIS_PASSWORD:wjibDGR1viNXtmDPIHHJtCANalZBP1Gw}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      username: default
+      password: ${REDIS_PASSWORD}
       ssl:
         enabled: false
-      timeout: 2s
+      timeout: 5s
       lettuce:
         pool:
           enabled: true
@@ -80,12 +80,12 @@ spring:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:}
-            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
             scope: openid,profile,email
           github:
-            client-id: ${GITHUB_CLIENT_ID:}
-            client-secret: ${GITHUB_CLIENT_SECRET:}
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
             scope: user:email,read:user
 
   # ===============================
@@ -103,7 +103,7 @@ spring:
       mail.smtp.connectiontimeout: 5000
 
   # ===============================
-  # CACHE (LOCAL)
+  # CACHE
   # ===============================
   cache:
     type: caffeine
@@ -124,23 +124,23 @@ spring:
 app:
   frontend:
     base-url: ${FRONTEND_BASE_URL}
-    success-redirect: ${FRONTEND_SUCCESS_REDIRECT:}
-    failure-redirect: ${FRONTEND_FAILURE_REDIRECT:}
+    success-redirect: ${FRONTEND_SUCCESS_REDIRECT}
+    failure-redirect: ${FRONTEND_FAILURE_REDIRECT}
 
 # ===============================
-# JWT SECURITY
+# JWT
 # ===============================
 security:
   jwt:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
-    access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
-    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:86400}
-    refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME:refreshToken}
-    cookie-secure: ${JWT_COOKIE_SECURE:true}
+    access-ttl-seconds: 900
+    refresh-ttl-seconds: 86400
+    refresh-token-cookie-name: refreshToken
+    cookie-secure: false
     cookie-http-only: true
     cookie-same-site: Lax
-    cookie-domain: ${JWT_COOKIE_DOMAIN:}
+    cookie-domain: localhost
 
 # ===============================
 # RATE LIMITING (DEV)
@@ -150,51 +150,12 @@ rate-limit:
     default:
       capacity: 1000
       refill-per-second: 50
-
     /api/v1/auth/login:
       capacity: 50
-      refill-per-second: 5        # 5 attempts per second
-
+      refill-per-second: 5
     /api/v1/auth/register:
       capacity: 50
       refill-per-second: 5
-
-    /api/v1/auth/forgot-password:
-      capacity: 50
-      refill-per-second: 5
-
-    /api/v1/auth/reset-password:
-      capacity: 50
-      refill-per-second: 5
-
-  # Per-email brute force (DEV)
-  login-email:
-    capacity: 20
-    refill-per-second: 2
-
-  # Per-IP flood (DEV)
-  login-ip:
-    capacity: 100
-    refill-per-second: 10
-
-  # Invalid refresh abuse
-  invalid-refresh:
-    capacity: 50
-    refill-per-second: 5
-
-  # Refresh rotation abuse
-  refresh-rotate:
-    capacity: 50
-    refill-per-second: 5
-    internal-cidrs:
-      - 127.0.0.1/32
-      - ::1/128
-      - 10.0.0.0/8
-      - 172.16.0.0/12
-      - 192.168.0.0/16
-
-
-
 
 # ===============================
 # LOGGING
@@ -208,13 +169,6 @@ logging:
     com.jaypal.authapp: DEBUG
 
 management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    metrics:
+  health:
+    redis:
       enabled: true
-
-
-

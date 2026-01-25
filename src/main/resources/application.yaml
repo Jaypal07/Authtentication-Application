@@ -4,16 +4,16 @@ server:
 spring:
   application:
     name: Auth-App-Backend
-  profiles:
-    active: dev
-  management:
+
+logging:
+  level:
+    root: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
     metrics:
-      export:
-        prometheus:
-          enabled: true
-      tags:
-        application: ${spring.application.name}
-        environment: production
-  logging:
-    level:
-      root: DEBUG
+      enabled: true

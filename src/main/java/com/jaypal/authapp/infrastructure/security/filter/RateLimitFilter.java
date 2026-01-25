@@ -6,7 +6,6 @@ import com.jaypal.authapp.infrastructure.ratelimit.CidrMatcher;
 import com.jaypal.authapp.infrastructure.ratelimit.RateLimitContext;
 import com.jaypal.authapp.infrastructure.ratelimit.RedisRateLimiter;
 import com.jaypal.authapp.infrastructure.ratelimit.RequestIpResolver;
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -42,46 +41,50 @@ public class RateLimitFilter extends OncePerRequestFilter {
         String method = request.getMethod();
         String ip = RequestIpResolver.resolve(request);
 
-        // Hard bypass
-        if (path.startsWith("/actuator") || "/api/v1/auth/login".equals(path)) {
+        // Hard bypass system endpoints
+        if (path.startsWith("/actuator")) {
             chain.doFilter(request, response);
             return;
         }
 
+        // CIDR bypass safety
         if (CidrMatcher.matches(ip, properties.getInternalCidrs())) {
-
-            Counter.builder("auth.ratelimit.internal.bypass")
-                    .description("Requests bypassing rate limiting due to internal CIDR")
-                    .tag("endpoint", path)
-                    .tag("method", method)
-                    .register(meterRegistry)
-                    .increment();
-
-            log.debug(
-                    "Internal traffic detected. Rate limit bypassed | ip={} path={}",
-                    ip,
-                    path
-            );
             chain.doFilter(request, response);
             return;
         }
+
+        // Load endpoints safely
+        Map<String, RateLimitProperties.Limit> endpoints = properties.getEndpoints();
+
+        RateLimitProperties.Limit defaultLimit =
+                endpoints.getOrDefault("default", new RateLimitProperties.Limit(100, 1));
 
         RateLimitProperties.Limit limit =
-                properties.getEndpoints().getOrDefault(
-                        path,
-                        properties.getEndpoints().get("default")
-                );
+                endpoints.getOrDefault(path, defaultLimit);
+
+        // Absolute safety fallback
+        if (limit == null) {
+            chain.doFilter(request, response);
+            return;
+        }
 
         String key = "rl:ip:" + ip + ":" + path;
 
         RateLimitContext ctx = new RateLimitContext(path, method, "ip");
 
-        boolean allowed = rateLimiter.allow(
-                key,
-                limit.getCapacity(),
-                limit.getRefillPerSecond(),
-                ctx
-        );
+        boolean allowed = true;
+
+        try {
+            allowed = rateLimiter.allow(
+                    key,
+                    limit.getCapacity(),
+                    limit.getRefillPerSecond(),
+                    ctx
+            );
+        } catch (Exception ex) {
+            log.error("Redis rate limit failure. Fail-open mode | path={} ip={}", path, ip, ex);
+            allowed = true; // Fail-open in prod
+        }
 
         if (!allowed) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
@@ -96,6 +99,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         chain.doFilter(request, response);
     }
+
 
     private String normalize(String path) {
         if (path.endsWith("/") && path.length() > 1) {

@@ -1,11 +1,6 @@
 server:
   port: ${SERVER_PORT:8081}
   forward-headers-strategy: framework
-  ssl:
-    enabled: false
-    key-store: classpath:keystore.p12
-    key-store-password: ${SSL_KEYSTORE_PASSWORD}
-    key-store-type: PKCS12
   shutdown: graceful
   error:
     include-message: never
@@ -17,86 +12,105 @@ spring:
   application:
     name: Auth-App-Backend
 
+  # ===============================
+  # DATABASE
+  # ===============================
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      pool-name: ${DB_POOL_NAME:HikariCP}
-      maximum-pool-size: ${DB_MAX_POOL_SIZE:20}
-      minimum-idle: ${DB_MIN_IDLE:5}
-      connection-timeout: ${DB_CONNECTION_TIMEOUT:10000}
-      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
-      max-lifetime: ${DB_MAX_LIFETIME:1800000}
-      validation-timeout: ${DB_VALIDATION_TIMEOUT:5000}
-      leak-detection-threshold: ${DB_LEAK_DETECTION_THRESHOLD:60000}
+      pool-name: HikariCP
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:5}
+      minimum-idle: ${DB_MIN_IDLE:2}
+      connection-timeout: 10000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      validation-timeout: 5000
       initialization-fail-timeout: -1
-      auto-commit: true
+      auto-commit: false
       connection-test-query: SELECT 1
 
+  # ===============================
+  # JPA
+  # ===============================
   jpa:
-    hibernate:
-      ddl-auto: validate
     open-in-view: false
     show-sql: false
+    hibernate:
+      ddl-auto: validate
     properties:
       hibernate:
         default_schema: public
-        format_sql: false
-        jdbc:
-          batch_size: 20
-          fetch_size: 50
-        order_inserts: true
-        order_updates: true
-        query:
-          in_clause_parameter_padding: true
-        connection:
-          provider_disables_autocommit: false
 
+  # ===============================
+  # REDIS (PROD – SSL ENABLED)
+  # ===============================
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      username: ${REDIS_USERNAME:default}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: false
+      timeout: 5s
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 200ms
+
+
+  rate-limit:
+    endpoints:
+      default:
+        capacity: 100
+        refill-per-second: 1
+
+      /api/v1/auth/login:
+        capacity: 5
+        refill-per-second: 1
+
+      /api/v1/auth/register:
+        capacity: 10
+        refill-per-second: 2
+
+
+  # ===============================
+  # OAUTH2
+  # ===============================
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID:}
-            client-secret: ${GOOGLE_CLIENT_SECRET:}
-            scope:
-              - openid
-              - profile
-              - email
-
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid,profile,email
           github:
-            client-id: ${GITHUB_CLIENT_ID:}
-            client-secret: ${GITHUB_CLIENT_SECRET:}
-            scope:
-              - user:email
-              - read:user
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            scope: user:email,read:user
 
-        provider:
-          google:
-            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
-            token-uri: https://oauth2.googleapis.com/token
-            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
-            user-name-attribute: sub
-
-          github:
-            authorization-uri: https://github.com/login/oauth/authorize
-            token-uri: https://github.com/login/oauth/access_token
-            user-info-uri: https://api.github.com/user
-            user-name-attribute: id
-
+  # ===============================
+  # MAIL
+  # ===============================
   mail:
     host: ${MAIL_HOST}
     port: ${MAIL_PORT}
     username: ${MAIL_USERNAME}
     password: ${MAIL_PASSWORD}
     properties:
-      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
-      mail.smtp.starttls.enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
-      mail.smtp.timeout: 5000
-      mail.smtp.connectiontimeout: 5000
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
 
+  # ===============================
+  # CACHE
+  # ===============================
   cache:
     type: caffeine
     caffeine:
@@ -107,97 +121,48 @@ spring:
       pool:
         size: 2
 
+# ===============================
+# APPLICATION SETTINGS
+# ===============================
 app:
   frontend:
     base-url: ${FRONTEND_BASE_URL}
-    success-redirect: ${FRONTEND_SUCCESS_REDIRECT:}
-    failure-redirect: ${FRONTEND_FAILURE_REDIRECT:}
+    success-redirect: ${FRONTEND_SUCCESS_REDIRECT}
+    failure-redirect: ${FRONTEND_FAILURE_REDIRECT}
 
+# ===============================
+# JWT
+# ===============================
 security:
   jwt:
     secret: ${JWT_SECRET}
     issuer: ${JWT_ISSUER}
-    access-ttl-seconds: ${JWT_ACCESS_TTL_SECONDS:900}
-    refresh-ttl-seconds: ${JWT_REFRESH_TTL_SECONDS:86400}
-    refresh-token-cookie-name: ${JWT_REFRESH_COOKIE_NAME:refreshToken}
-    cookie-secure: ${JWT_COOKIE_SECURE:true}
-    cookie-http-only: ${JWT_COOKIE_HTTP_ONLY:true}
-    cookie-same-site: ${JWT_COOKIE_SAME_SITE:Strict}
-    cookie-domain: ${JWT_COOKIE_DOMAIN:}
+    access-ttl-seconds: 900
+    refresh-ttl-seconds: 86400
+    refresh-token-cookie-name: refreshToken
+    cookie-secure: true
+    cookie-http-only: true
+    cookie-same-site: Strict
+    cookie-domain: ${JWT_COOKIE_DOMAIN}
 
+# ===============================
+# LOGGING
+# ===============================
 logging:
   level:
     root: INFO
     org.springframework.security: WARN
-    org.hibernate.SQL: WARN
-    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.springframework.data.redis: INFO
     com.jaypal.authapp: INFO
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
+# ===============================
+# ACTUATOR
+# ===============================
 management:
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:
         include: health,info,metrics
-      base-path: /actuator
-  endpoint:
-    health:
-      show-details: when-authorized
-  metrics:
-    export:
-      simple:
-        enabled: true
-
-## ===============================
-## RATE LIMITING (PROD)
-## ===============================
-#rate-limit:
-#  endpoints:
-#    default:
-#      capacity: 100
-#      refill-per-second: 1
-#
-#    # Explicit login protection
-#    /api/v1/auth/login:
-#      capacity: 5
-#      refill-per-second: 0.02     # 1 attempt every 50 seconds
-#
-#    /api/v1/auth/register:
-#      capacity: 10
-#      refill-per-second: 0.2
-#
-#    /api/v1/auth/forgot-password:
-#      capacity: 5
-#      refill-per-second: 0.05
-#
-#    /api/v1/auth/reset-password:
-#      capacity: 5
-#      refill-per-second: 0.05
-#
-#  # Per-email brute force (PROD)
-#  login-email:
-#    capacity: 5
-#    refill-per-second: 0.01       # 1 attempt per 100 seconds
-#
-#  # Per-IP flood (PROD)
-#  login-ip:
-#    capacity: 20
-#    refill-per-second: 0.05       # 1 attempt per 20 seconds
-#
-#  # Invalid refresh abuse
-#  invalid-refresh:
-#    capacity: 10
-#    refill-per-second: 0.05
-#
-#  # Refresh rotation abuse
-#  refresh-rotate:
-#    capacity: 5
-#    refill-per-second: 0.02
-#    internal-cidrs:
-#      - 127.0.0.1/32
-#      - ::1/128
-#      - 10.0.0.0/8
-#      - 172.16.0.0/12
-#      - 192.168.0.0/16

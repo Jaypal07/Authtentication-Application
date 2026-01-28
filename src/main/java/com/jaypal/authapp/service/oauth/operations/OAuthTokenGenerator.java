@@ -12,6 +12,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
+/**
+ * Responsibility: Token issuance only.
+ * Does not mutate User entity.
+ */
 @Component
 @RequiredArgsConstructor
 public class OAuthTokenGenerator {
@@ -21,14 +25,15 @@ public class OAuthTokenGenerator {
     private final JwtService jwtService;
 
     public OAuthLoginResult generate(User user) {
-        Set<PermissionType> permissions = permissionService.resolvePermissions(user.getId());
 
-        IssuedRefreshToken refreshToken = refreshTokenService.issue(
-                user.getId(),
-                jwtService.getRefreshTtlSeconds()
-        );
+        Set<PermissionType> permissions =
+                permissionService.resolvePermissions(user.getId());
 
-        String accessToken = jwtService.generateAccessToken(user, permissions);
+        IssuedRefreshToken refreshToken =
+                refreshTokenService.issue(user.getId(), jwtService.getRefreshTtlSeconds());
+
+        String accessToken =
+                jwtService.generateAccessToken(user, permissions);
 
         return new OAuthLoginResult(
                 user.getId(),
